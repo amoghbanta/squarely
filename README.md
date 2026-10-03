@@ -142,6 +142,9 @@ Vite + React 19 + TypeScript, chess.js 1.4, Stockfish.js 19 (lite, single-thread
 
 ## Credits and licences
 
+Squarely's own code is [MIT](LICENSE). The pieces below keep their own licences.
+
 - [Stockfish.js](https://github.com/nmrugg/stockfish.js) (GPLv3) by Nathan Rugg / Chess.com, based on [Stockfish](https://github.com/official-stockfish/Stockfish). It's loaded as a separate, unmodified worker file.
 - [chess.js](https://github.com/jhlywa/chess.js) (BSD-2).
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) via [kokoro-js](https://www.npmjs.com/package/kokoro-js) (Apache-2.0): the voice when there's no Gemini key.
 - Game data from the public [chess.com API](https://www.chess.com/news/view/published-data-api).
