@@ -78,7 +78,7 @@ flowchart LR
 | **Opponent** | Stockfish 19 WASM (`src/engine/stockfish.ts`) | MultiPV + softmax over centipawn loss, so level 1 really lets you win |
 | **Teacher** | `src/chess/lessons.ts`, `knowledge.ts`, `puzzles.ts` | Lessons, a curated chess book (30 openings, 19 tactics and rules), Lichess puzzles with a hint ladder from the real solution |
 | **Scout** | Background agent (`src/scout/scout.ts`) | chess.com games → Stockfish review of every move → recurring mistakes → Gemini 3.8 Flash plan (through the condense proxy) |
-| **Memory** | localStorage + condense.chat | Name, record, mistakes, Scout plan, saved games, lessons done, compressed notes from past sessions |
+| **Memory** | Browser localStorage (nothing leaves your device) | Name, record, mistakes, Scout plan, saved games, lessons done, notes from past sessions (condense.chat shrinks these before they're stored) |
 
 **28 tools** (`src/agent/tools.ts`): `make_move`, `engine_reply`, `analyse_position`, `suggest_move`, `review_move`, `chess_knowledge`, `explain_piece`, `describe_board`, `undo`, `new_game`, `set_level`, `start_lesson`, `stop_lesson`, `start_puzzle`, `puzzle_hint`, `stop_puzzle`, `pause_game`, `resume_game`, `open_game`, `review_step`, `stop_review`, `scout_games`, `remember`, `game_summary`, `change_settings`, `show_screen`, `stop_listening`, `forget_me`.
 
