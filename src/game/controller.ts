@@ -16,6 +16,7 @@ import {
   whereIs,
   winProb,
 } from '../chess/facts'
+import { THEME_INFO, THEME_FOR_MISTAKE, pickPuzzle, themeFromWords, type Puzzle, type PuzzleTheme } from '../chess/puzzles'
 import { resolveMove, type MoveIntent, type MoveOption } from '../chess/resolver'
 import { classifyPunishment, type Punishment } from '../chess/motifs'
 import { loadProfile, resetProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
@@ -81,6 +82,21 @@ export type GameSnapshot = {
   mood: BuddyMood
   hintOpen: boolean
   moves: PlayedMove[]
+  puzzle: PuzzleView | null
+}
+
+/** What the UI shows about the puzzle in progress. Never includes the answer. */
+export type PuzzleView = {
+  id: string
+  theme: PuzzleTheme
+  label: string
+  goal: string
+  rating: number
+  found: number // player moves found so far
+  total: number // player moves in the solution
+  hintLevel: number
+  solved: boolean
+  url: string
 }
 
 export type Panel = 'summary' | 'scout' | 'help' | null
@@ -190,6 +206,7 @@ export class GameController {
       marks: this.marks,
       moves: this.chess.history({ verbose: true }).map((m, i) => ({ ply: i, san: m.san, color: m.color, to: m.to, grade: this.grades[i] ?? null })),
       hintOpen: this.hintOpen,
+      puzzle: this.puzzleView(),
       mood: this.mood,
       scouting: this.scouting,
       scoutProgress: this.scoutProgress,
@@ -314,31 +331,40 @@ export class GameController {
     return this.exclusive(() => this.opponentMoveInner())
   }
 
-  private async makeMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
-    if (this.overReason()) return { status: 'game_over', reason: this.overReason() }
-    if (this.chess.turn() !== this.kidColor) return { status: 'not_your_turn' }
-    const t0 = performance.now()
+  /** Referee: exactly one legal move ({ ok }), or the clarifying question / not-legal result to hand back. */
+  private referee(intent: MoveIntent, t0: number): { ok: Move; result?: never } | { ok?: never; result: Record<string, unknown> } {
     const r = resolveMove(this.chess, intent, this.pending)
     if (r.status === 'ask') {
       this.pending = r.options
       this.point(r.options.map((o) => ({ from: o.from, to: o.to, kind: 'option' as const })), r.options.map((o) => ({ square: o.from, kind: 'focus' as const })))
       this.say(`${r.question} ${r.options.map((o, i) => `${i + 1}: ${o.label}`).join('. ')}`)
       this.log('Referee', 'Ambiguous → ask kid', { question: r.question, options: r.options.map((o) => o.san) }, performance.now() - t0)
-      return { status: 'need_clarification', question: r.question, options: r.options.map((o, i) => ({ option: i + 1, ...o })) }
+      return { result: { status: 'need_clarification', question: r.question, options: r.options.map((o, i) => ({ option: i + 1, ...o })) } }
     }
     if (r.status === 'illegal') {
       this.log('Referee', 'Rejected: not legal', r.reason, performance.now() - t0)
       this.say(`That move isn't allowed: ${r.reason}.`)
       this.emit()
-      return { status: 'not_legal', reason: r.reason, facts: r.facts }
+      return { result: { status: 'not_legal', reason: r.reason, facts: r.facts } }
     }
+    this.pending = null
+    return { ok: r.move }
+  }
+
+  private async makeMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
+    if (this.puzzle) return this.puzzleMoveInner(intent)
+    if (this.overReason()) return { status: 'game_over', reason: this.overReason() }
+    if (this.chess.turn() !== this.kidColor) return { status: 'not_your_turn' }
+    const t0 = performance.now()
+    const r = this.referee(intent, t0)
+    if (!r.ok) return r.result
     this.pending = null
 
     this.thinking = true
     this.emit()
     const fenBefore = this.chess.fen()
     const cpBefore = await this.kidEval(fenBefore)
-    const move = this.chess.move(r.move)
+    const move = this.chess.move(r.ok)
     this.lastMove = { from: move.from, to: move.to }
     this.marks = { squares: [], arrows: [] }
     this.mood = null
@@ -425,6 +451,7 @@ export class GameController {
 
   // ---------- Opponent ----------
   private async opponentMoveInner(): Promise<Record<string, unknown>> {
+    if (this.puzzle) return { status: 'in_puzzle', instruction: 'A puzzle is on: the opponent only moves when the player finds the right move.' }
     if (this.overReason() || this.chess.turn() === this.kidColor) return { status: 'not_opponent_turn' }
     this.thinking = true
     this.emit()
@@ -510,6 +537,7 @@ export class GameController {
   }
 
   private async suggestMoveInner(pieceWord?: string): Promise<Record<string, unknown>> {
+    if (this.puzzle) return { status: 'in_puzzle', instruction: 'Use puzzle_hint instead, so the player still gets to find it.' }
     const t0 = performance.now()
     const c = this.chess
     if (this.overReason()) return { status: 'game_over' }
@@ -554,6 +582,7 @@ export class GameController {
   }
 
   private async reviewMoveInner(): Promise<Record<string, unknown>> {
+    if (this.puzzle) return { status: 'in_puzzle', instruction: 'Puzzles are checked move by move already.' }
     const t0 = performance.now()
     const hist = this.chess.history({ verbose: true })
     const last = [...hist].reverse().find((m) => m.color === this.kidColor)
@@ -636,6 +665,7 @@ export class GameController {
   }
 
   private undoInner(): Record<string, unknown> {
+    if (this.puzzle) return { status: 'in_puzzle', instruction: 'Nothing to undo in a puzzle: wrong tries never change the board. Offer a hint instead.' }
     const h = this.chess.history({ verbose: true })
     // Only undo if the player has a move to take back (never the buddy's opening move as black).
     if (!h.some((m) => m.color === this.kidColor)) return { status: 'nothing_to_undo' }
@@ -692,6 +722,247 @@ export class GameController {
     if (over === 'checkmate_kid_wins') this.mood = 'happy'
     this.summaryLine = this.gameSummary().parent_line
     this.panel = 'summary'
+  }
+
+  // ---------- Puzzles (Lichess puzzle database, CC0) ----------
+  // The player solves by voice through the same Referee. Hints climb a ladder (idea → which piece →
+  // the move) and every rung comes from the stored solution, so the coach never invents an answer.
+  private puzzle: { p: Puzzle; theme: PuzzleTheme; step: number; hintLevel: number; hintsUsed: number; tries: number; solved: boolean } | null = null
+  private lastPuzzleTheme: PuzzleTheme | null = null
+  private savedGame: { pgn: string; kidColor: Color; grades: (Grade | null)[]; kidMoves: KidMoveLog[] } | null = null
+
+  private puzzleView(): PuzzleView | null {
+    const z = this.puzzle
+    if (!z) return null
+    const info = THEME_INFO[z.theme]
+    return {
+      id: z.p.id,
+      theme: z.theme,
+      label: info.label,
+      goal: this.kidsMode ? info.kidGoal : info.goal,
+      rating: z.p.rating,
+      found: Math.floor((z.step - 1) / 2),
+      total: Math.floor(z.p.moves.length / 2),
+      hintLevel: z.hintLevel,
+      solved: z.solved,
+      url: z.p.url,
+    }
+  }
+
+  private playUci(uci: string): Move {
+    const m = this.chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] })
+    this.lastMove = { from: m.from, to: m.to }
+    return m
+  }
+
+  startPuzzle(words?: string) {
+    return this.exclusive(() => this.startPuzzleInner(words))
+  }
+
+  private async startPuzzleInner(words?: string): Promise<Record<string, unknown>> {
+    const asked = themeFromWords(words)
+    const weak = topMistakes(this.profile)
+      .map((m) => THEME_FOR_MISTAKE[m])
+      .find(Boolean)
+    const theme: PuzzleTheme = asked ?? this.lastPuzzleTheme ?? weak ?? 'mateIn1'
+    const why = asked ? 'the player asked for it' : !this.lastPuzzleTheme && weak === theme ? 'it practises a mistake Memory has seen before' : 'more of the same kind'
+    // Park an unfinished game so "back to my game" can bring it back exactly.
+    if (!this.puzzle && this.chess.history().length && !this.overReason()) {
+      this.savedGame = { pgn: this.chess.pgn(), kidColor: this.kidColor, grades: [...this.grades], kidMoves: [...this.kidMoves] }
+    }
+    const p = pickPuzzle(theme, this.profile.puzzles.seen)
+    this.chess = new Chess(p.fen)
+    // The puzzle starts with the opponent's move; the player is the side that answers it.
+    this.kidColor = other(this.chess.turn())
+    this.grades = []
+    this.kidMoves = []
+    this.pending = null
+    this.hintOpen = false
+    this.lastMove = null
+    this.marks = { squares: [], arrows: [] }
+    this.mood = null
+    this.panel = null
+    this.puzzle = { p, theme, step: 1, hintLevel: 0, hintsUsed: 0, tries: 0, solved: false }
+    this.lastPuzzleTheme = theme
+    this.emit()
+    // Let the board settle, then show the opponent's move sliding in: that's what the player answers.
+    await new Promise((r) => setTimeout(r, 700))
+    const setup = this.playUci(p.moves[0])
+    this.point([{ from: setup.from, to: setup.to, kind: 'move' }], [])
+
+    const pz = this.profile.puzzles
+    const bt = pz.byTheme[theme] ?? { solved: 0, tried: 0 }
+    this.profile = {
+      ...this.profile,
+      puzzles: { ...pz, tried: pz.tried + 1, seen: [...pz.seen, p.id].slice(-400), byTheme: { ...pz.byTheme, [theme]: { ...bt, tried: bt.tried + 1 } } },
+    }
+    saveProfile(this.profile)
+    const info = THEME_INFO[theme]
+    const goal = this.kidsMode ? info.kidGoal : info.goal
+    this.say(`Puzzle: ${info.label}. ${goal}`)
+    this.log('Tutor', `Puzzle ${p.id}: ${info.label}`, { rating: p.rating, why })
+    return {
+      status: 'puzzle_started',
+      puzzle: info.label,
+      goal,
+      you_play: colorName(this.kidColor),
+      opponent_just_played: this.describe(setup),
+      your_moves_to_find: Math.floor(p.moves.length / 2),
+      difficulty: p.rating < 900 ? 'easy' : p.rating < 1200 ? 'medium' : 'tricky',
+      chosen_because: why,
+      instruction: 'Say the goal in one short sentence and where the opponent just moved, then wait for their move. No hints yet. Never say the answer unless puzzle_hint gives it.',
+    }
+  }
+
+  private async puzzleMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
+    const z = this.puzzle!
+    if (z.solved) return { status: 'puzzle_already_solved', instruction: 'Offer another puzzle (start_puzzle) or going back to the game (stop_puzzle).' }
+    const t0 = performance.now()
+    const r = this.referee(intent, t0)
+    if (!r.ok) return r.result
+    const want = z.p.moves[z.step]
+    const uci = r.ok.lan
+    const last = z.step >= z.p.moves.length - 1
+    // Lichess accepts any checkmate on the final move, so do we.
+    let right = uci === want
+    if (!right && last) {
+      const c = new Chess(this.chess.fen())
+      c.move(r.ok.san)
+      right = c.isCheckmate()
+    }
+    if (!right) {
+      z.tries++
+      this.point([], [{ square: r.ok.to, kind: 'danger' }])
+      this.setMood('worried')
+      this.say(`${r.ok.san} is not the answer. Try again!`)
+      this.log('Tutor', `Puzzle try ${r.ok.san} ✗`, { tries: z.tries }, performance.now() - t0)
+      return {
+        status: 'not_the_answer',
+        you_tried: { piece: nameOf(r.ok.piece), to_where: whereIs(r.ok.to, this.kidColor), san: r.ok.san },
+        board_unchanged: true,
+        tries: z.tries,
+        instruction: z.tries >= 2 ? 'Be encouraging, then offer a hint (puzzle_hint).' : 'Be encouraging and let them try again. Do not reveal the answer.',
+      }
+    }
+    const mine = this.chess.move(r.ok.san)
+    this.lastMove = { from: mine.from, to: mine.to }
+    z.step++
+    z.hintLevel = 0
+    const you = { ...this.describe(mine), san: mine.san }
+    if (z.step >= z.p.moves.length || this.chess.isCheckmate()) {
+      z.solved = true
+      const pz = this.profile.puzzles
+      const bt = pz.byTheme[z.theme] ?? { solved: 0, tried: 1 }
+      this.profile = { ...this.profile, puzzles: { ...pz, solved: pz.solved + 1, byTheme: { ...pz.byTheme, [z.theme]: { ...bt, solved: bt.solved + 1 } } } }
+      saveProfile(this.profile)
+      this.point([{ from: mine.from, to: mine.to, kind: 'suggest' }], [])
+      this.setMood('happy')
+      this.say(`Solved! ${mine.san}${this.chess.isCheckmate() ? ' is checkmate!' : '!'}`)
+      this.log('Tutor', `Puzzle solved ✓`, { tries: z.tries, hints: z.hintsUsed }, performance.now() - t0)
+      return {
+        status: 'solved',
+        you_played: you,
+        checkmate: this.chess.isCheckmate(),
+        wrong_tries: z.tries,
+        hints_used: z.hintsUsed,
+        puzzles_solved_total: this.profile.puzzles.solved,
+        instruction: 'Celebrate in one sentence (bigger if no hints were used), then offer another puzzle or going back to the game.',
+      }
+    }
+    // Right so far: the opponent answers with the puzzle's line.
+    this.point([{ from: mine.from, to: mine.to, kind: 'suggest' }], [])
+    this.emit()
+    await new Promise((res) => setTimeout(res, 650))
+    const reply = this.playUci(z.p.moves[z.step])
+    z.step++
+    this.point([{ from: reply.from, to: reply.to, kind: 'move' }], [])
+    this.say(`Yes! Buddy answers: ${nameOf(reply.piece)} to ${reply.to}. Find the next move.`)
+    this.log('Tutor', `Puzzle step ✓ ${mine.san}`, { opponent: reply.san }, performance.now() - t0)
+    return {
+      status: 'correct_keep_going',
+      you_played: you,
+      opponent_replied: this.describe(reply),
+      your_moves_left: Math.floor((z.p.moves.length - z.step + 1) / 2),
+      instruction: 'Say "yes!" and where the opponent replied, then let them find the next move. No hints unless asked.',
+    }
+  }
+
+  /** Next rung of the hint ladder: 1 the idea, 2 which piece, 3 the move itself. */
+  puzzleHint(): Record<string, unknown> {
+    const z = this.puzzle
+    if (!z) return { status: 'no_puzzle', instruction: 'There is no puzzle on. Offer one (start_puzzle).' }
+    if (z.solved) return { status: 'already_solved' }
+    z.hintLevel = Math.min(3, z.hintLevel + 1)
+    z.hintsUsed++
+    const want = z.p.moves[z.step]
+    const from = want.slice(0, 2) as Square
+    const piece = this.chess.get(from)!
+    const concept = findConcept(THEME_INFO[z.theme].concept)?.[1]
+    this.log('Tutor', `Puzzle hint ${z.hintLevel}`, { theme: z.theme })
+    if (z.hintLevel === 1) {
+      this.setMood(null)
+      return {
+        status: 'hint',
+        level: 1,
+        idea: concept ? (this.kidsMode ? concept.kid : concept.grownup) : THEME_INFO[z.theme].goal,
+        look_for: concept?.look_for,
+        instruction: 'Ask ONE question built from look_for. Do not name the piece or the square yet.',
+      }
+    }
+    if (z.hintLevel === 2) {
+      this.point([], [{ square: from, kind: 'focus' }])
+      return {
+        status: 'hint',
+        level: 2,
+        piece_to_move: nameOf(piece.type),
+        where: whereIs(from, this.kidColor),
+        square: from,
+        shown_on_board: 'that piece is highlighted',
+        instruction: 'Tell them which piece (it is glowing on the board), and ask where it could go. Not the square yet.',
+      }
+    }
+    const facts = moveFacts(this.chess.fen(), want, this.kidColor, this.kidsMode)
+    const san = new Chess(this.chess.fen()).move({ from, to: want.slice(2, 4), promotion: want[4] }).san
+    this.point([{ from, to: want.slice(2, 4) as Square, kind: 'suggest' }], [])
+    return {
+      status: 'hint',
+      level: 3,
+      answer: san,
+      move: facts,
+      shown_on_board: 'green arrow',
+      instruction: 'Explain why this move works using only the move facts, then let them play it.',
+    }
+  }
+
+  /** Leave puzzles: bring back the parked game if there was one. */
+  stopPuzzle() {
+    return this.exclusive(() => {
+      if (!this.puzzle) return { status: 'no_puzzle' }
+      this.puzzle = null
+      this.pending = null
+      this.marks = { squares: [], arrows: [] }
+      this.mood = null
+      const g = this.savedGame
+      this.savedGame = null
+      if (g) {
+        this.chess = new Chess()
+        this.chess.loadPgn(g.pgn)
+        this.kidColor = g.kidColor
+        this.grades = g.grades
+        this.kidMoves = g.kidMoves
+        const h = this.chess.history({ verbose: true }).at(-1)
+        this.lastMove = h ? { from: h.from, to: h.to } : null
+      } else {
+        this.chess = new Chess()
+        this.kidColor = 'w'
+        this.grades = []
+        this.kidMoves = []
+        this.lastMove = null
+      }
+      this.say(g ? 'Back to our game!' : 'New game! You play white.')
+      this.log('Referee', g ? 'Back to the game' : 'New game after puzzles')
+      return { status: g ? 'back_to_game' : 'new_game', you_play: colorName(this.kidColor), your_turn: this.chess.turn() === this.kidColor }
+    })
   }
 
   /** Taking back a finished game's last move means the result no longer stands. */
@@ -883,6 +1154,8 @@ export class GameController {
     if (!this.chess.history().length && want === this.kidColor && this.chess.fen() === new Chess().fen()) {
       return { status: 'new_game', you_play: colorName(this.kidColor), note: 'board was already fresh' }
     }
+    this.puzzle = null
+    this.savedGame = null
     if (color) this.kidColor = color === 'black' ? 'b' : 'w'
     this.chess = new Chess()
     this.lastMove = null

@@ -483,3 +483,20 @@ a { color: var(--tint); }
 .card { max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
 @media (max-height: 700px) { .modal { place-items: start center; padding: 16px; } .card { padding: 18px; gap: 10px; } }
 .over-card .primary { min-height: 50px; padding: 0 36px; font-size: 17px; }
+
+/* ---------- puzzle bar ---------- */
+.puzzle-bar {
+  width: min(100%, 620px); display: grid; gap: 8px; padding: 14px 16px; border-radius: 18px;
+  background: var(--surface); box-shadow: 0 1px 0 var(--separator), 0 8px 24px rgba(0, 0, 0, 0.06); animation: rise 0.22s ease;
+}
+.puzzle-bar.solved { box-shadow: 0 0 0 2px #34c759, 0 8px 24px rgba(52, 199, 89, 0.25); }
+.pz-head { display: flex; align-items: center; gap: 10px; }
+.pz-tag { padding: 4px 10px; border-radius: 999px; background: var(--tint-soft); color: var(--tint); font-weight: 700; font-size: 14px; }
+.pz-steps { display: flex; gap: 5px; }
+.pz-steps i { width: 10px; height: 10px; border-radius: 50%; background: var(--fill-strong); transition: background 0.3s; }
+.pz-steps i.on { background: #34c759; }
+.pz-src { margin-left: auto; font-size: 12px; color: var(--label-3); text-decoration: none; }
+.pz-goal { margin: 0; font: 600 19px/1.3 var(--rounded); color: var(--label); }
+.pz-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.pz-actions .primary { min-height: 44px; padding: 0 20px; }
+.pill-btn.ghost { background: var(--fill); color: var(--label); }

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { Square } from 'chess.js'
 import { localVoice, type LocalVoiceStatus } from './voice/localVoice'
-import { game, type TranscriptLine } from './game/controller'
+import { game, type PuzzleView, type TranscriptLine } from './game/controller'
 import { Board } from './ui/Board'
 import { MoveStrip } from './ui/MoveStrip'
 import { ScoutActivity } from './ui/ScoutActivity'
@@ -45,11 +45,14 @@ const RECEIPT: Record<string, string> = {
   game_summary: 'Memory',
   remember: 'Memory',
   new_game: 'Referee',
+  start_puzzle: 'Puzzle · Lichess',
+  puzzle_hint: 'Puzzle solution · Lichess',
+  stop_puzzle: 'Referee',
 }
 
 const LANGUAGES = ['English', 'Svenska', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', 'Nederlands', 'Polski', 'Türkçe', 'العربية', 'हिन्दी', '中文', '日本語', '한국어']
 
-const QUICK = ['Show me a good move', 'Was that good?', "What's attacking me?", 'What opening is this?', 'Undo']
+const QUICK = ['Give me a puzzle', 'Show me a good move', 'Was that good?', "What's attacking me?", 'What opening is this?', 'Undo']
 
 const PHONE_QUERY = '(max-width: 899px)'
 const usePhone = () => {
@@ -354,7 +357,13 @@ export function App() {
             : { text: 'Lost the connection. Your game is safe.', action: 'retry' as const }
       : null
 
-  const status = s.over
+  const status = s.puzzle
+    ? s.puzzle.solved
+      ? 'Solved!'
+      : s.thinking
+        ? 'Watch…'
+        : 'Puzzle: your move'
+    : s.over
     ? s.over === 'checkmate_kid_wins'
       ? 'You won!'
       : s.over === 'checkmate_opponent_wins'
@@ -441,7 +450,7 @@ export function App() {
             disabled={s.thinking || !!s.over}
             onMove={onBoardMove}
           />
-          <MoveStrip moves={s.moves} kidColor={s.kidColor} />
+          {s.puzzle ? <PuzzleBar pz={s.puzzle} say={(t) => void say(t)} /> : <MoveStrip moves={s.moves} kidColor={s.kidColor} />}
 
           <div className="captions" aria-hidden>
             {heard ? <p className="cap-kid heard">{heard}…</p> : lastKid && <p className="cap-kid">{lastKid.text}</p>}
@@ -843,6 +852,45 @@ function Confetti() {
         </span>
       ))}
     </div>
+  )
+}
+
+// The puzzle on the board: goal, progress, and the hint ladder as buttons (same words work by voice).
+function PuzzleBar({ pz, say }: { pz: PuzzleView; say: (t: string) => void }) {
+  return (
+    <section className={`puzzle-bar ${pz.solved ? 'solved' : ''}`} aria-label="Puzzle">
+      <div className="pz-head">
+        <span className="pz-tag">{pz.label}</span>
+        <span className="pz-steps" aria-label={`${pz.found} of ${pz.total} moves found`}>
+          {Array.from({ length: pz.total }, (_, i) => (
+            <i key={i} className={i < pz.found ? 'on' : ''} />
+          ))}
+        </span>
+        <a className="pz-src" href={pz.url} target="_blank" rel="noreferrer">
+          Lichess · {pz.rating}
+        </a>
+      </div>
+      <p className="pz-goal">{pz.solved ? 'Solved! 🎉' : pz.goal}</p>
+      <div className="pz-actions">
+        {pz.solved ? (
+          <button className="primary" onClick={() => say('another puzzle')}>
+            Next puzzle
+          </button>
+        ) : (
+          <button className="primary" onClick={() => say('hint')}>
+            {['Hint', 'Which piece?', 'Show me'][pz.hintLevel] ?? 'Show me'}
+          </button>
+        )}
+        {!pz.solved && (
+          <button className="pill-btn ghost" onClick={() => say('another puzzle')}>
+            Skip
+          </button>
+        )}
+        <button className="pill-btn ghost" onClick={() => say('back to my game')}>
+          Back to game
+        </button>
+      </div>
+    </section>
   )
 }
 

@@ -158,5 +158,6 @@ Squarely's own code is [MIT](LICENSE). The pieces below keep their own licences.
 
 - [Stockfish.js](https://github.com/nmrugg/stockfish.js) (GPLv3) by Nathan Rugg / Chess.com, based on [Stockfish](https://github.com/official-stockfish/Stockfish). It's loaded as a separate, unmodified worker file.
 - [chess.js](https://github.com/jhlywa/chess.js) (BSD-2).
+- Puzzles: a 280-puzzle, kid-friendly slice of the [Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0), rebuilt with `scripts/build-puzzles.py`.
 - [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) via [kokoro-js](https://www.npmjs.com/package/kokoro-js) (Apache-2.0): the voice when there's no Gemini key.
 - Game data from the public [chess.com API](https://www.chess.com/news/view/published-data-api).

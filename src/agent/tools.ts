@@ -63,6 +63,27 @@ export const toolDeclarations: FunctionDeclaration[] = [
     parametersJsonSchema: { type: 'object', properties: { topic: { type: 'string', description: 'A tactic or idea, or "opening" for the current opening.' } } },
   },
   {
+    name: 'start_puzzle',
+    behavior: Behavior.BLOCKING,
+    description: 'Start a chess puzzle from the Lichess puzzle database (or the next one: "another puzzle"). The board switches to the puzzle; an unfinished game is parked and comes back with stop_puzzle. With no theme it picks one that practises the player\'s recurring mistakes. The player then solves by saying moves (make_move checks them against the real solution).',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { theme: { type: 'string', description: 'What kind, in their words or one of: mateIn1, mateIn2, hangingPiece, fork, pin, skewer, discoveredAttack.' } },
+    },
+  },
+  {
+    name: 'puzzle_hint',
+    behavior: Behavior.BLOCKING,
+    description: 'Next hint for the puzzle on the board, a ladder: 1 = the idea to look for, 2 = which piece (highlighted), 3 = the move (green arrow). Call it when they ask for help, are stuck, or say "show me".',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'stop_puzzle',
+    behavior: Behavior.BLOCKING,
+    description: 'Leave puzzles and go back to the parked game (or a fresh one).',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'describe_board',
     behavior: Behavior.BLOCKING,
     description: 'Board awareness for "read the board", "where is my king", "what did he just move".',
@@ -174,6 +195,16 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       break
     case 'review_move':
       result = await game.reviewMove()
+      break
+    case 'start_puzzle':
+      result = await game.startPuzzle(typeof args.theme === 'string' ? args.theme : undefined)
+      break
+    case 'puzzle_hint':
+      // Outside a puzzle, "hint" means the usual danger check.
+      result = game.getSnapshot().puzzle ? game.puzzleHint() : await game.analysePosition()
+      break
+    case 'stop_puzzle':
+      result = await game.stopPuzzle()
       break
     case 'chess_knowledge':
       result = game.chessKnowledge(typeof args.topic === 'string' ? args.topic : undefined)

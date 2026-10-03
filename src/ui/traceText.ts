@@ -38,6 +38,9 @@ const TOOL_ASK: Record<string, string> = {
   stop_listening: 'Asked to stop listening',
   forget_me: 'Asked Memory to forget this player',
   scout_games: 'Sent the Scout agent to study online games',
+  start_puzzle: 'Asked for a puzzle from the Lichess database',
+  puzzle_hint: 'Asked for the next puzzle hint',
+  stop_puzzle: 'Asked to go back to the game',
   suggest_move: 'Asked the Tutor for a good move to show on the board',
   review_move: 'Asked the Tutor to grade the last move',
   chess_knowledge: 'Looked something up in the chess book (openings, tactics, rules)',
@@ -97,6 +100,11 @@ export function humanize(e: TraceEntry): string {
       const m = t.match(/\((.+)\)/)?.[1]
       return `Big slip spotted (${motif(m)}): winning chances ${pct(b)} → ${pct(a)}. ${o.hint ? 'Stepping in with a hint question, not the answer.' : 'Hinted recently, so staying quiet this time.'}`
     }
+    if (t.startsWith('Puzzle hint ')) return `Puzzle hint, step ${t.slice(12)} of 3 (${['', 'the idea to look for', 'which piece to move', 'the move itself'][Number(t.slice(12))] ?? ''}), taken from the puzzle's own solution.`
+    if (t.startsWith('Puzzle try ')) return `${t.slice(11, -2)} isn't the puzzle's answer, so the board stays as it was (try ${o.tries}).`
+    if (t.startsWith('Puzzle step ✓')) return `${t.slice(14)} is right! The other side answers with the puzzle's move ${o.opponent}.`
+    if (t === 'Puzzle solved ✓') return `Puzzle solved with ${o.tries} wrong ${o.tries === 1 ? 'try' : 'tries'} and ${o.hints} ${o.hints === 1 ? 'hint' : 'hints'}. Saved to Memory.`
+    if (t.startsWith('Puzzle ')) return `Picked Lichess puzzle ${t.slice(7)} (rating ${o.rating}) because ${o.why}.`
     if (t.startsWith('Suggests ')) return `Stockfish picked ${t.slice(9)}${o.for && o.for !== 'any piece' ? ` for your ${o.for}` : ''}. Drawn as a green arrow${o.idea ? `; the idea: ${String(o.idea).replace(/_/g, ' ')}` : ''}.`
     if (t.startsWith('Review ')) {
       const [mv, grade] = t.slice(7).split(': ')

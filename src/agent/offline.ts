@@ -39,6 +39,12 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   if (/help|what can i say/.test(t) && !/attack/.test(t)) return { name: 'show_screen', args: { screen: 'help' } }
   if (/close|back to (the )?game/.test(t)) return { name: 'show_screen', args: { screen: 'game' } }
   if (/play (as )?black/.test(t)) return { name: 'new_game', args: { color: 'black' } }
+  if (/puzzle|another one|next one/.test(t)) {
+    if (/stop|enough|no more|back to (my|the|our) game|quit/.test(t)) return { name: 'stop_puzzle', args: {} }
+    return { name: 'start_puzzle', args: { theme: t } }
+  }
+  if (/back to (my|the|our) game/.test(t)) return { name: 'stop_puzzle', args: {} }
+  if (/^(hint|help me|i'?m stuck|stuck|show me)\b/.test(t)) return { name: 'puzzle_hint', args: {} }
   if (/was (that|it) (good|bad|ok)|why was|should i have/.test(t)) return { name: 'review_move', args: {} }
   if (/best move|good move|what should|show me a move|suggest/.test(t)) {
     const piece = WORDS.find(([re]) => re.test(t))?.[1]
@@ -91,6 +97,23 @@ export function phraseOffline(name: string, r: Record<string, unknown>): string 
   if (name === 'make_move' && opp) {
     return `${r.praise ? 'Brilliant, you found it! ' : ''}I moved my ${opp.piece} to ${opp.to}${opp.captured ? ` and took your ${opp.captured}` : ''}${opp.your_king_in_check ? '. Check!' : '.'}`
   }
+  if (name === 'start_puzzle' && r.goal) {
+    const o = r.opponent_just_played as { piece: string; to: string }
+    return `Puzzle time: ${r.puzzle}! The other side just moved their ${o.piece} to ${o.to}. ${r.goal}`
+  }
+  if (name === 'make_move' && r.status === 'not_the_answer') return `Not that one, but good try! ${Number(r.tries) >= 2 ? 'Say "hint" if you want help.' : 'Have another look.'}`
+  if (name === 'make_move' && r.status === 'correct_keep_going') {
+    const o = r.opponent_replied as { piece: string; to: string }
+    return `Yes! Then they move their ${o.piece} to ${o.to}. What's your next move?`
+  }
+  if (name === 'make_move' && r.status === 'solved') return `You solved it${r.checkmate ? ' with checkmate' : ''}! Say "another puzzle" or "back to my game".`
+  if (name === 'puzzle_hint') {
+    if (r.level === 1) return `Hint: ${r.look_for ?? r.idea}`
+    if (r.level === 2) return `Look at your glowing ${r.piece_to_move}. Where could it go?`
+    if (r.level === 3) return `The answer is the green arrow: ${r.answer}.`
+    return 'There is no puzzle on right now. Say "give me a puzzle".'
+  }
+  if (name === 'stop_puzzle') return r.status === 'back_to_game' ? 'Back to our game! Your move.' : 'New game! You play white.'
   if (name === 'suggest_move' && r.suggestion) {
     const f = r.suggestion as { piece: string; to: string; to_where: string; captures: string | null; check: boolean }
     return `Look at the green arrow: your ${f.piece} to ${f.to}${f.captures ? `, taking the ${f.captures}` : ''}${f.check ? ', with check' : ''}.`
