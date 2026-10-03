@@ -11,11 +11,13 @@ export function classifyPunishment(fenAfterKidMove: string, best: EngineLine | u
 if (!best) return { motif: null, hintFacts: null }
 const copy = new Chess(fenAfterKidMove)
   const m = copy.move({ from: best.move.slice(0, 2), to: best.move.slice(2, 4), promotion: best.move[4] })
-  const attacker = { piece: nameOf(m.piece), where: whereIs(m.from, kidColor) }
-  const reply = { piece: nameOf(m.piece), from_where: whereIs(m.from, kidColor), to_where: whereIs(m.to, kidColor) }
+  // Exact squares everywhere, so the voice never has to guess one; and "when" says it's about their NEXT move.
+  const attacker = { piece: nameOf(m.piece), square: m.from, where: whereIs(m.from, kidColor) }
+  const reply = { piece: nameOf(m.piece), from: m.from, to: m.to, from_where: whereIs(m.from, kidColor), to_where: whereIs(m.to, kidColor) }
+  const when = `if they answer with their ${nameOf(m.piece)} from ${m.from} to ${m.to} (this has NOT happened yet)`
   if (best.mate !== null && best.mate > 0) {
     const k = pieces(copy, kidColor).find((q) => copy.get(q)!.type === 'k')
-    return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', attacker }, squares: k ? [k] : [] }
+    return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', when, enemy_move_that_does_it: reply }, squares: k ? [k] : [] }
   }
   // Fork: the moved enemy piece attacks two or more of the kid's non-pawn pieces (king included).
   // Only targets that really cost something count: undefended, or worth more than the forker (the king always counts).
@@ -28,7 +30,7 @@ const copy = new Chess(fenAfterKidMove)
   if (victims.length >= 2) {
     return {
       motif: 'fork',
-      hintFacts: { kind: 'fork: one enemy piece could attack two of yours at once', attacker, targets: victims.map((v) => nameOf(v)) },
+      hintFacts: { kind: 'fork: one enemy piece could attack two of yours at once', when, enemy_move_that_does_it: reply, targets: victimSquares.map((sq) => ({ piece: nameOf(copy.get(sq)!.type), square: sq })) },
       squares: victimSquares,
     }
   }
@@ -38,7 +40,8 @@ const copy = new Chess(fenAfterKidMove)
       motif: 'piece_in_danger',
       hintFacts: {
         kind: 'one of your pieces can be captured; you could take back, but the swap is bad for you',
-        victim: { piece: nameOf(m.captured), where: whereIs(m.to, kidColor) },
+        when: 'right now: it is already attacked',
+        victim: { piece: nameOf(m.captured), square: m.to, where: whereIs(m.to, kidColor) },
         attacked_by: [attacker],
         enemy_move_that_does_it: reply,
       },
@@ -48,7 +51,7 @@ const copy = new Chess(fenAfterKidMove)
   if (m.captured) {
     return {
       motif: 'hanging_piece',
-      hintFacts: { kind: 'one of your pieces can be taken for free', victim: { piece: nameOf(m.captured), where: whereIs(m.to, kidColor) }, attacker },
+      hintFacts: { kind: 'one of your pieces can be taken for free', when: 'right now: it is already attacked and nobody guards it', victim: { piece: nameOf(m.captured), square: m.to, where: whereIs(m.to, kidColor) }, attacked_by: [attacker] },
       squares: [m.to],
     }
   }
@@ -61,13 +64,14 @@ const copy = new Chess(fenAfterKidMove)
     return {
       motif: 'piece_in_danger',
       hintFacts: {
-        kind: discovered ? 'one of your pieces will be in danger (a hidden attack: one enemy piece moves out of the way of another)' : 'one of your pieces will be in danger',
-        victim: { piece: victim.victim.name, where: victim.victim.where },
-        attacked_by: victim.attackers.map((a) => ({ piece: a.name, where: a.where })),
+        kind: discovered ? 'one of your pieces would be in danger (a hidden attack: one enemy piece moves out of the way of another)' : 'one of your pieces would be in danger',
+        when,
+        victim: { piece: victim.victim.name, square: victim.victim.square, where: victim.victim.where },
+        attacked_by_after_that_move: victim.attackers.map((a) => ({ piece: a.name, square: a.square, where: a.where })),
         enemy_move_that_does_it: reply,
       },
       squares: [victim.victim.square],
     }
   }
-  return { motif: 'loses_material', hintFacts: { kind: 'the opponent has a strong reply', enemy_move_that_does_it: reply } }
+  return { motif: 'loses_material', hintFacts: { kind: 'the opponent has a strong reply', when, enemy_move_that_does_it: reply } }
 }

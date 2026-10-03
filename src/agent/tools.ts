@@ -64,6 +64,24 @@ export const toolDeclarations: FunctionDeclaration[] = [
     parametersJsonSchema: { type: 'object', properties: { topic: { type: 'string', description: 'A tactic or idea, or "opening" for the current opening.' } } },
   },
   {
+    name: 'start_lesson',
+    behavior: Behavior.BLOCKING,
+    description: 'Learn mode for beginners: teaches how ONE piece moves on a nearly empty board, with a tiny task (gobble the pawns). Use when the player is new, says they don\'t know how to play, or asks to learn a piece. Lessons go castle (rook), bishop, queen, king, horse (knight), pawn. Pass the piece they asked about, or "next".',
+    parametersJsonSchema: { type: 'object', properties: { lesson: { type: 'string', description: 'rook, bishop, queen, king, knight, pawn, or "next"' } } },
+  },
+  {
+    name: 'explain_piece',
+    behavior: Behavior.BLOCKING,
+    description: 'How a piece moves ("how does the horse move?"), from the curated rules, and draws where the player\'s pieces of that kind can go right now. Works in any game, puzzle or lesson.',
+    parametersJsonSchema: { type: 'object', properties: { piece: { type: 'string', enum: PIECES } }, required: ['piece'] },
+  },
+  {
+    name: 'stop_lesson',
+    behavior: Behavior.BLOCKING,
+    description: 'Leave lessons and go back to the parked game (or a fresh one).',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'start_puzzle',
     behavior: Behavior.BLOCKING,
     description: 'Start a chess puzzle from the Lichess puzzle database (or the next one: "another puzzle"). The board switches to the puzzle; an unfinished game is parked and comes back with stop_puzzle. With no theme it picks one that practises the player\'s recurring mistakes. The player then solves by saying moves (make_move checks them against the real solution).',
@@ -198,6 +216,15 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       break
     case 'review_move':
       result = await game.reviewMove()
+      break
+    case 'start_lesson':
+      result = await game.startLesson(typeof args.lesson === 'string' ? args.lesson : undefined)
+      break
+    case 'explain_piece':
+      result = await game.explainPiece(String(args.piece ?? ''))
+      break
+    case 'stop_lesson':
+      result = await game.stopPuzzle()
       break
     case 'start_puzzle':
       result = await game.startPuzzle(typeof args.theme === 'string' ? args.theme : undefined)

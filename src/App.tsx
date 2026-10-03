@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { Square } from 'chess.js'
 import { localVoice, type LocalVoiceStatus } from './voice/localVoice'
-import { game, type PuzzleView, type TranscriptLine } from './game/controller'
+import { game, type LessonView, type PuzzleView, type TranscriptLine } from './game/controller'
+import { LESSONS } from './chess/lessons'
 import { PUZZLE_THEMES, THEME_INFO, type PuzzleTheme } from './chess/puzzles'
 import { Board } from './ui/Board'
 import { MoveStrip } from './ui/MoveStrip'
@@ -51,6 +52,9 @@ const RECEIPT: Record<string, string> = {
   remember: 'Memory',
   new_game: 'Referee',
   start_puzzle: 'Puzzle · Lichess',
+  start_lesson: 'Lesson · chess.js',
+  explain_piece: 'Rules · chess.js',
+  stop_lesson: 'Referee',
   puzzle_hint: 'Puzzle solution · Lichess',
   stop_puzzle: 'Referee',
 }
@@ -371,7 +375,11 @@ export function App() {
             : { text: 'Lost the connection. Your game is safe.', action: 'retry' as const }
       : null
 
-  const status = s.puzzle
+  const status = s.lesson
+    ? s.lesson.done
+      ? 'Lesson done!'
+      : 'Lesson: your move'
+    : s.puzzle
     ? s.puzzle.solved
       ? 'Solved!'
       : s.thinking
@@ -413,9 +421,20 @@ export function App() {
   // One row of next steps under the board, chosen by what's happening. Each also works by voice.
   type Action = { label: string; run: () => void; primary?: boolean }
   const kidHasMoved = s.moves.some((m) => m.color === s.kidColor)
+  const pieceWord = s.lesson ? (['rook', 'bishop', 'queen', 'king', 'knight', 'pawn'] as const)[s.lesson.index] : null
   const actions: Action[] = s.pendingOptions?.length
     ? []
-    : s.puzzle
+    : s.lesson
+      ? s.lesson.done
+        ? [
+            ...(s.lesson.index < s.lesson.count - 1 ? [{ label: 'Next lesson', primary: true, run: () => void act('start_lesson', { lesson: 'next' }, 'Next lesson') }] : [{ label: 'Try a checkmate puzzle', primary: true, run: () => void act('start_puzzle', { theme: 'mateIn1' }, 'Checkmate puzzle') }]),
+            { label: 'Play a game', run: () => void act('stop_lesson', {}, 'Play a game') },
+          ]
+        : [
+            { label: 'How does it move?', primary: true, run: () => void act('explain_piece', { piece: pieceWord }, 'How does it move?') },
+            { label: 'Start over', run: () => void act('undo', {}, 'Start the lesson over') },
+          ]
+      : s.puzzle
       ? s.puzzle.solved
         ? [
             { label: 'Next puzzle', primary: true, run: () => void act('start_puzzle', { theme: s.puzzle!.theme }, 'Next puzzle') },
@@ -441,10 +460,10 @@ export function App() {
               { label: 'Any danger?', run: () => void act('analyse_position', {}, "What's attacking me?") },
             ]
 
-  const mode = s.puzzle ? 'puzzles' : 'play'
-  const setMode = (m: 'play' | 'puzzles') => {
+  const mode = s.lesson ? 'learn' : s.puzzle ? 'puzzles' : 'play'
+  const setMode = (m: 'learn' | 'play' | 'puzzles') => {
     if (m === mode) return
-    void (m === 'puzzles' ? act('start_puzzle', {}, 'Puzzles') : act('stop_puzzle', {}, 'Play'))
+    void (m === 'puzzles' ? act('start_puzzle', {}, 'Puzzles') : m === 'learn' ? act('start_lesson', {}, 'Learn') : act('stop_lesson', {}, 'Play'))
   }
 
   // What Squarely just said, and what you can do next.
@@ -596,6 +615,7 @@ export function App() {
           value={mode}
           onChange={setMode}
           options={[
+            { value: 'learn', label: 'Learn' },
             { value: 'play', label: 'Play' },
             { value: 'puzzles', label: 'Puzzles' },
           ]}
@@ -622,10 +642,12 @@ export function App() {
             lastMove={s.lastMove}
             lastGrade={s.puzzle ? null : (s.moves.at(-1)?.grade ?? null)}
             checkSquare={s.checkSquare}
-            disabled={s.thinking || (!!s.over && !s.puzzle) || !!s.puzzle?.solved}
+            disabled={s.thinking || (!!s.over && !s.puzzle) || !!s.puzzle?.solved || !!s.lesson?.done}
             onMove={onBoardMove}
           />
-          {s.puzzle ? (
+          {s.lesson ? (
+            <LessonLine ls={s.lesson} onPick={(id) => void act('start_lesson', { lesson: id }, `${id} lesson`)} />
+          ) : s.puzzle ? (
             <PuzzleLine pz={s.puzzle} onTheme={(t) => void act('start_puzzle', { theme: t }, `${THEME_INFO[t].label} puzzle`)} />
           ) : (
             <MoveStrip moves={s.moves} kidColor={s.kidColor} />
@@ -947,6 +969,35 @@ function Confetti() {
         </span>
       ))}
     </div>
+  )
+}
+
+// The lesson under the board: which piece (a menu to jump), how it moves, and pawns gobbled so far.
+function LessonLine({ ls, onPick }: { ls: LessonView; onPick: (id: string) => void }) {
+  return (
+    <section className={`puzzle-line lesson-line ${ls.done ? 'solved' : ''}`} aria-label="Lesson">
+      <div className="pz-head">
+        <label className="pz-menu">
+          <span className="sr-only">Lesson</span>
+          <select value={ls.id} onChange={(e) => onPick(e.target.value)}>
+            {LESSONS.map((l, i) => (
+              <option key={l.id} value={l.id}>
+                {i + 1}. {l.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="pz-steps" aria-label={`${ls.gobbled} of ${ls.total} pawns gobbled`}>
+          {Array.from({ length: ls.total }, (_, i) => (
+            <i key={i} className={i < ls.gobbled ? 'on' : ''} />
+          ))}
+        </span>
+        <span className="pz-src">
+          Lesson {ls.index + 1} of {ls.count}
+        </span>
+      </div>
+      <p className="lesson-how">{ls.done ? 'Well done! 🎉' : ls.how}</p>
+    </section>
   )
 }
 

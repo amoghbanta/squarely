@@ -46,6 +46,11 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   if (/back to (my|the|our) game/.test(t)) return { name: 'stop_puzzle', args: {} }
   if (/\bclose\b/.test(t)) return { name: 'show_screen', args: { screen: 'game' } }
   if (/play (as )?black/.test(t)) return { name: 'new_game', args: { color: 'black' } }
+  if (/how (do|does) (the )?pieces? move|teach me|i'?m new|don'?t know how to play|never played|learn chess|next lesson|start (a )?lesson/.test(t))
+    return { name: 'start_lesson', args: { lesson: /next/.test(t) ? 'next' : t } }
+  const howMoves = t.match(/how (?:does|do|can) (?:the |a |my )?(pawn|knight|horse|bishop|rook|castle|queen|king)s? (?:move|go|work)/)
+  if (howMoves) return { name: 'explain_piece', args: { piece: ({ horse: 'knight', castle: 'rook' } as Record<string, string>)[howMoves[1]] ?? howMoves[1] } }
+  if (/stop (the )?lesson|no more lessons/.test(t)) return { name: 'stop_lesson', args: {} }
   if (/puzzle|another one|next one/.test(t)) {
     if (/stop|enough|no more|back to (my|the|our) game|quit/.test(t)) return { name: 'stop_puzzle', args: {} }
     return { name: 'start_puzzle', args: { theme: t } }
@@ -103,6 +108,17 @@ export function phraseOffline(name: string, r: Record<string, unknown>): string 
   if (name === 'make_move' && opp) {
     return `${r.praise ? 'Brilliant, you found it! ' : ''}I moved my ${opp.piece} to ${opp.to}${opp.captured ? ` and took your ${opp.captured}` : ''}${opp.your_king_in_check ? '. Check!' : '.'}`
   }
+  if (name === 'start_lesson') {
+    if (r.status === 'all_lessons_done') return 'You know how every piece moves! Say "give me a puzzle" or "new game".'
+    return `${r.lesson}! ${r.how_it_moves} ${r.task}`
+  }
+  if (name === 'explain_piece' && r.how_it_moves) return `${r.how_it_moves}${r.shown_on_board === 'its moves are drawn on the board' ? ' Look at the board to see where it can go.' : ''}`
+  if (name === 'make_move' && r.status === 'lesson_move') {
+    const y = r.you_played as { gobbled_a_pawn: boolean }
+    return y.gobbled_a_pawn ? `Gobbled! ${r.pawns_left} left.` : r.need_to_reach ? `Now walk to ${r.need_to_reach}!` : 'Good! The lit-up squares show where it can go.'
+  }
+  if (name === 'make_move' && r.status === 'lesson_done') return `You did it in ${r.moves_used} moves! Say "next lesson" when you're ready.`
+  if (name === 'stop_lesson') return r.status === 'no_puzzle' ? "We're already in our game." : 'Back to our game!'
   if (name === 'start_puzzle' && r.goal) {
     const o = r.opponent_just_played as { piece: string; to: string }
     return `Puzzle time: ${r.puzzle}! The other side just moved their ${o.piece} to ${o.to}. ${r.goal}`

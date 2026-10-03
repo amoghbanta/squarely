@@ -1,11 +1,13 @@
 // Game controller: owns the position and runs the Referee, Opponent, Tutor and Memory roles.
 // Everything returned from here is computed by chess.js / Stockfish and is safe for the voice agent to phrase.
-import { Chess, type Color, type Move, type Square } from 'chess.js'
+import { Chess, type Color, type Move, type PieceSymbol, type Square } from 'chess.js'
 import { getEngine } from '../engine/stockfish'
 import {
   BLUNDER_WIN_PROB_LOSS,
   CHARACTER,
   setKidsModeFacts,
+  STD_NAME,
+  pieces,
   nameOf,
   boardListing,
   colorName,
@@ -16,6 +18,7 @@ import {
   whereIs,
   winProb,
 } from '../chess/facts'
+import { HOW_IT_MOVES, LESSONS, lessonFromWords, type Lesson, type LessonId } from '../chess/lessons'
 import { THEME_INFO, THEME_FOR_MISTAKE, pickPuzzle, themeFromWords, type Puzzle, type PuzzleTheme } from '../chess/puzzles'
 import { hasMoveContent, heardMove } from '../chess/hearing'
 import { TALK_STYLE, type TalkStyle } from '../agent/prompt'
@@ -85,6 +88,20 @@ export type GameSnapshot = {
   hintOpen: boolean
   moves: PlayedMove[]
   puzzle: PuzzleView | null
+  lesson: LessonView | null
+}
+
+/** What the UI shows about the lesson in progress. */
+export type LessonView = {
+  id: LessonId
+  index: number
+  count: number
+  title: string
+  how: string
+  gobbled: number
+  total: number
+  reach: string | null
+  done: boolean
 }
 
 /** What the UI shows about the puzzle in progress. Never includes the answer. */
@@ -225,6 +242,7 @@ export class GameController {
       moves: this.chess.history({ verbose: true }).map((m, i) => ({ ply: i, san: m.san, color: m.color, to: m.to, grade: this.grades[i] ?? null })),
       hintOpen: this.hintOpen,
       puzzle: this.puzzleView(),
+      lesson: this.lessonView(),
       mood: this.mood,
       scouting: this.scouting,
       scoutProgress: this.scoutProgress,
@@ -305,7 +323,7 @@ export class GameController {
 
   private overReason(): string | null {
     // A puzzle's checkmate is the puzzle's answer, not the end of a game.
-    if (this.puzzle) return null
+    if (this.puzzle || this.lesson) return null
     const c = this.chess
     if (c.isCheckmate()) return c.turn() === this.kidColor ? 'checkmate_opponent_wins' : 'checkmate_kid_wins'
     if (c.isStalemate()) return 'stalemate'
@@ -383,6 +401,7 @@ export class GameController {
 
   private async makeMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
     if (this.puzzle) return this.puzzleMoveInner(intent)
+    if (this.lesson) return this.lessonMoveInner(intent)
     if (this.overReason()) return { status: 'game_over', reason: this.overReason() }
     if (this.chess.turn() !== this.kidColor) return { status: 'not_your_turn' }
     const t0 = performance.now()
@@ -482,6 +501,7 @@ export class GameController {
   // ---------- Opponent ----------
   private async opponentMoveInner(): Promise<Record<string, unknown>> {
     if (this.puzzle) return { status: 'in_puzzle', instruction: 'A puzzle is on: the opponent only moves when the player finds the right move.' }
+    if (this.lesson) return { status: 'in_lesson', instruction: 'In a lesson nobody moves against the player: they keep moving their piece.' }
     if (this.overReason() || this.chess.turn() === this.kidColor) return { status: 'not_opponent_turn' }
     this.thinking = true
     this.emit()
@@ -522,6 +542,7 @@ export class GameController {
   }
 
   private async analysePositionInner(): Promise<Record<string, unknown>> {
+    if (this.lesson) return this.explainPieceInner(this.lesson.l.piece)
     const t0 = performance.now()
     const c = this.chess
     const threats = threatsAgainst(c, this.kidColor).map((t) => ({
@@ -568,6 +589,7 @@ export class GameController {
 
   private async suggestMoveInner(pieceWord?: string): Promise<Record<string, unknown>> {
     if (this.puzzle) return { status: 'in_puzzle', instruction: 'Use puzzle_hint instead, so the player still gets to find it.' }
+    if (this.lesson) return this.explainPieceInner(this.lesson.l.piece)
     const t0 = performance.now()
     const c = this.chess
     if (this.overReason()) return { status: 'game_over' }
@@ -612,7 +634,7 @@ export class GameController {
   }
 
   private async reviewMoveInner(): Promise<Record<string, unknown>> {
-    if (this.puzzle) return { status: 'in_puzzle', instruction: 'Puzzles are checked move by move already.' }
+    if (this.puzzle || this.lesson) return { status: 'in_puzzle', instruction: 'Puzzles and lessons are checked move by move already.' }
     const t0 = performance.now()
     const hist = this.chess.history({ verbose: true })
     const last = [...hist].reverse().find((m) => m.color === this.kidColor)
@@ -696,6 +718,7 @@ export class GameController {
 
   private undoInner(): Record<string, unknown> {
     if (this.puzzle) return { status: 'in_puzzle', instruction: 'Nothing to undo in a puzzle: wrong tries never change the board. Offer a hint instead.' }
+    if (this.lesson) return this.restartLessonInner()
     const h = this.chess.history({ verbose: true })
     // Only undo if the player has a move to take back (never the buddy's opening move as black).
     if (!h.some((m) => m.color === this.kidColor)) return { status: 'nothing_to_undo' }
@@ -796,12 +819,8 @@ export class GameController {
       .find(Boolean)
     const theme: PuzzleTheme = asked ?? this.lastPuzzleTheme ?? weak ?? 'mateIn1'
     const why = asked ? 'the player asked for it' : !this.lastPuzzleTheme && weak === theme ? 'it practises a mistake Memory has seen before' : 'more of the same kind'
-    // Park an unfinished game so "back to my game" can bring it back exactly.
-    if (!this.puzzle && this.chess.history().length && !this.overReason()) {
-      this.savedGame = { pgn: this.chess.pgn(), kidColor: this.kidColor, grades: [...this.grades], kidMoves: [...this.kidMoves], hintOpen: this.hintOpen, lastHintAtKidMove: this.lastHintAtKidMove }
-    }
-    // A finished game's "recorded" flag must not leak into the puzzle or the board after it.
-    this.gameRecorded = false
+    this.parkGame()
+    this.lesson = null
     const p = pickPuzzle(theme, this.profile.puzzles.seen)
     this.chess = new Chess(p.fen)
     // The puzzle starts with the opponent's move; the player is the side that answers it.
@@ -976,11 +995,185 @@ export class GameController {
     }
   }
 
-  /** Leave puzzles: bring back the parked game if there was one. */
+  // ---------- Learn mode: one piece at a time, for people new to chess ----------
+  private lesson: { l: Lesson; gobbled: number; total: number; moves: number; done: boolean } | null = null
+
+  private lessonView(): LessonView | null {
+    const z = this.lesson
+    if (!z) return null
+    const how = HOW_IT_MOVES[z.l.piece]
+    return {
+      id: z.l.id,
+      index: LESSONS.indexOf(z.l),
+      count: LESSONS.length,
+      title: this.kidsMode ? z.l.title : `The ${STD_NAME[z.l.piece]}`,
+      how: this.kidsMode ? how.kid : how.grownup,
+      gobbled: z.gobbled,
+      total: z.total,
+      reach: z.l.reach ?? null,
+      done: z.done,
+    }
+  }
+
+  startLesson(words?: string) {
+    return this.exclusive(() => this.startLessonInner(words))
+  }
+
+  private startLessonInner(words?: string): Record<string, unknown> {
+    const done = this.profile.lessonsDone ?? []
+    const next = () => {
+      const after = this.lesson ? LESSONS.indexOf(this.lesson.l) + 1 : 0
+      return LESSONS.slice(after).find((l) => !done.includes(l.id)) ?? LESSONS[after] ?? LESSONS.find((l) => !done.includes(l.id))
+    }
+    const l = (words && !/next|another|continue/.test(words) ? lessonFromWords(words) : undefined) ?? next()
+    if (!l) {
+      return { status: 'all_lessons_done', instruction: 'They know how every piece moves! Offer a checkmate puzzle (start_puzzle theme mateIn1) or their first real game (new_game).' }
+    }
+    this.parkGame()
+    this.puzzle = null
+    this.loadLesson(l)
+    const how = HOW_IT_MOVES[l.piece]
+    this.say(`Lesson: ${this.lessonView()!.title}. ${this.lessonView()!.how}`)
+    this.log('Tutor', `Lesson: ${l.id}`, { pawns: this.lesson!.total })
+    return {
+      status: 'lesson_started',
+      lesson: this.lessonView()!.title,
+      lesson_number: LESSONS.indexOf(l) + 1,
+      of: LESSONS.length,
+      how_it_moves: this.kidsMode ? how.kid : how.grownup,
+      worth_points: how.worth || undefined,
+      task: `Gobble all ${this.lesson!.total} enemy pawns with your ${nameOf(l.piece)}${l.reach ? `, then walk all the way to ${l.reach} to become a queen` : ''}.`,
+      shown_on_board: 'the squares it can reach are lit up; the pawns to gobble are circled',
+      instruction: 'Explain how_it_moves in your own short, warm words (one idea at a time), then give the task and let them try. No chess notation unless they use it.',
+    }
+  }
+
+  private loadLesson(l: Lesson) {
+    this.chess = new Chess(l.fen, { skipValidation: true })
+    this.kidColor = 'w'
+    this.grades = []
+    this.kidMoves = []
+    this.pending = null
+    this.hintOpen = false
+    this.lastMove = null
+    this.mood = null
+    this.panel = null
+    const total = pieces(this.chess, 'b').length
+    this.lesson = { l, gobbled: 0, total, moves: 0, done: false }
+    this.showReach()
+  }
+
+  /** Light up where the lesson piece can go, and circle the pawns still to gobble. */
+  private showReach() {
+    const z = this.lesson
+    if (!z) return
+    const from = pieces(this.chess, 'w').find((sq) => this.chess.get(sq)!.type === z.l.piece)
+    const dests = from ? this.chess.moves({ square: from, verbose: true }).map((m) => m.to) : []
+    this.point(
+      [],
+      [
+        ...dests.map((sq) => ({ square: sq, kind: 'focus' as const })),
+        ...pieces(this.chess, 'b').map((sq) => ({ square: sq, kind: 'target' as const })),
+        ...(z.l.reach && !z.done ? [{ square: z.l.reach as Square, kind: 'target' as const }] : []),
+      ],
+    )
+  }
+
+  private restartLessonInner(): Record<string, unknown> {
+    if (!this.lesson) return { status: 'no_lesson' }
+    this.loadLesson(this.lesson.l)
+    this.say('Lesson restarted.')
+    return { status: 'lesson_restarted', task: 'Same task again, from the start.' }
+  }
+
+  private async lessonMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
+    const z = this.lesson!
+    if (z.done) return { status: 'lesson_already_done', instruction: 'Offer the next lesson (start_lesson) or a game.' }
+    const t0 = performance.now()
+    const r = this.referee(intent, t0)
+    if (!r.ok) return r.result
+    const m = this.chess.move(r.ok.san)
+    this.lastMove = { from: m.from, to: m.to }
+    z.moves++
+    if (m.captured) z.gobbled++
+    // Nobody plays against you in a lesson: it's your turn again.
+    const [board, , castling] = this.chess.fen().split(' ')
+    this.chess.load(`${board} w ${castling} - 0 1`, { skipValidation: true })
+    const reached = !z.l.reach || pieces(this.chess, 'w').some((sq) => sq === z.l.reach)
+    z.done = z.gobbled >= z.total && reached
+    const left = z.total - z.gobbled
+    if (z.done) {
+      const doneList = [...new Set([...(this.profile.lessonsDone ?? []), z.l.id])]
+      this.profile = { ...this.profile, lessonsDone: doneList }
+      saveProfile(this.profile)
+      this.point([{ from: m.from, to: m.to, kind: 'suggest' }], [])
+      this.setMood('happy')
+      this.say(`Lesson done in ${z.moves} moves!`)
+    } else this.showReach()
+    this.log('Tutor', `Lesson move ${m.san}${m.captured ? ' (gobbled!)' : ''}`, { left, moves: z.moves }, performance.now() - t0)
+    const nextLesson = LESSONS[LESSONS.indexOf(z.l) + 1]
+    return {
+      status: z.done ? 'lesson_done' : 'lesson_move',
+      you_played: { piece: nameOf(m.piece), to: m.to, to_where: whereIs(m.to, 'w'), gobbled_a_pawn: !!m.captured, promoted_to: m.promotion ? nameOf(m.promotion) : undefined },
+      pawns_left: left,
+      need_to_reach: !z.done && z.l.reach && left === 0 ? z.l.reach : undefined,
+      moves_used: z.moves,
+      next_lesson: z.done ? (nextLesson ? (this.kidsMode ? nextLesson.title : nextLesson.id) : 'none: offer a checkmate puzzle or a first game') : undefined,
+      instruction: z.done
+        ? 'Celebrate! Then offer the next lesson (start_lesson) or, if none, their first checkmate puzzle or a game.'
+        : m.captured
+          ? 'Cheer the gobble in a few words and say how many pawns are left.'
+          : 'Short encouragement; remind them the lit-up squares are where it can go.',
+    }
+  }
+
+  /** "How does the horse move?": the curated rule, plus that piece's real moves drawn on the board. */
+  explainPiece(word: string) {
+    return this.exclusive(() => {
+      const sym = (Object.entries(STD_NAME).find(([, n]) => word.toLowerCase().includes(n))?.[0] ??
+        lessonFromWords(word)?.piece) as PieceSymbol | undefined
+      if (!sym) return { status: 'unknown_piece', instruction: 'Ask which piece they mean.' }
+      return this.explainPieceInner(sym)
+    })
+  }
+
+  private explainPieceInner(sym: PieceSymbol): Record<string, unknown> {
+    const how = HOW_IT_MOVES[sym]
+    const mine = pieces(this.chess, this.kidColor).filter((sq) => this.chess.get(sq)!.type === sym)
+    const moves = mine.flatMap((sq) => this.chess.moves({ square: sq, verbose: true }))
+    if (moves.length && moves.length <= 8) this.point(moves.map((m) => ({ from: m.from, to: m.to, kind: 'option' as const })), [])
+    else if (moves.length) this.point([], [...new Set(moves.map((m) => m.to))].map((sq) => ({ square: sq, kind: 'focus' as const })))
+    else this.point([], mine.map((sq) => ({ square: sq, kind: 'focus' as const })))
+    this.log('Tutor', `Explain how the ${STD_NAME[sym]} moves`, { on_board: mine.length, moves: moves.length })
+    return {
+      status: 'ok',
+      piece: nameOf(sym),
+      how_it_moves: this.kidsMode ? how.kid : how.grownup,
+      tip: how.tip,
+      worth_points: how.worth || undefined,
+      yours_on_board: mine.map((sq) => ({ square: sq, where: whereIs(sq, this.kidColor) })),
+      can_go_now: moves.slice(0, 8).map((m) => ({ to: m.to, where: whereIs(m.to, this.kidColor), takes: m.captured ? nameOf(m.captured) : undefined })),
+      more_moves: moves.length > 8 ? moves.length - 8 : undefined,
+      shown_on_board: moves.length ? 'its moves are drawn on the board' : 'it has no moves right now',
+      instruction: 'Explain how_it_moves simply, then point at the board. Do not list squares unless asked.',
+    }
+  }
+
+  /** Park an unfinished game (once) so "back to my game" can bring it back exactly after puzzles or lessons. */
+  private parkGame() {
+    if (!this.puzzle && !this.lesson && this.chess.history().length && !this.overReason()) {
+      this.savedGame = { pgn: this.chess.pgn(), kidColor: this.kidColor, grades: [...this.grades], kidMoves: [...this.kidMoves], hintOpen: this.hintOpen, lastHintAtKidMove: this.lastHintAtKidMove }
+    }
+    // A finished game's "recorded" flag must not leak into the puzzle or the board after it.
+    this.gameRecorded = false
+  }
+
+  /** Leave puzzles or lessons: bring back the parked game if there was one. */
   stopPuzzle() {
     return this.exclusive(async () => {
-      if (!this.puzzle) return { status: 'no_puzzle' }
+      if (!this.puzzle && !this.lesson) return { status: 'no_puzzle' }
       this.puzzle = null
+      this.lesson = null
       this.pending = null
       this.marks = { squares: [], arrows: [] }
       this.mood = null
@@ -1210,6 +1403,7 @@ export class GameController {
       return { status: 'new_game', you_play: colorName(this.kidColor), note: 'board was already fresh' }
     }
     this.puzzle = null
+    this.lesson = null
     this.savedGame = null
     if (color) this.kidColor = color === 'black' ? 'b' : 'w'
     this.chess = new Chess()

@@ -10,6 +10,7 @@ const PIECE_SOUNDALIKES: [RegExp, string][] = [
   [/\b(queens|queeen)\b/g, 'queen'],
   [/\b(kings)\b/g, 'king'],
   [/\b(castles)\b/g, 'castle'],
+  [/\b(casting|cassling|castel|kasling|castle in)\b/g, 'castling'],
 ]
 
 // Spoken file letters. Plain "a" is left out on purpose (it's usually the article).

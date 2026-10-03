@@ -39,6 +39,9 @@ const TOOL_ASK: Record<string, string> = {
   forget_me: 'Asked Memory to forget this player',
   scout_games: 'Sent the Scout agent to study online games',
   start_puzzle: 'Asked for a puzzle from the Lichess database',
+  start_lesson: 'Started a beginner lesson',
+  explain_piece: 'Asked how a piece moves',
+  stop_lesson: 'Asked to go back to the game',
   puzzle_hint: 'Asked for the next puzzle hint',
   stop_puzzle: 'Asked to go back to the game',
   suggest_move: 'Asked the Tutor for a good move to show on the board',
@@ -100,6 +103,9 @@ export function humanize(e: TraceEntry): string {
       const m = t.match(/\((.+)\)/)?.[1]
       return `Big slip spotted (${motif(m)}): winning chances ${pct(b)} → ${pct(a)}. ${o.hint ? 'Stepping in with a hint question, not the answer.' : 'Hinted recently, so staying quiet this time.'}`
     }
+    if (t.startsWith('Lesson: ')) return `Started the ${t.slice(8)} lesson: just that piece and ${o.pawns} pawns to gobble, on an almost empty board.`
+    if (t.startsWith('Lesson move ')) return `Lesson move ${t.slice(12)}, checked by chess.js. ${o.left ? `${o.left} pawn${o.left === 1 ? '' : 's'} left.` : 'All pawns gobbled!'}`
+    if (t.startsWith('Explain how the ')) return `Explained how the ${t.slice(16, -6)} moves from the rule book, and drew its ${o.moves} possible moves on the board.`
     if (t.startsWith('Puzzle hint ')) return `Puzzle hint, step ${t.slice(12)} of 3 (${['', 'the idea to look for', 'which piece to move', 'the move itself'][Number(t.slice(12))] ?? ''}), taken from the puzzle's own solution.`
     if (t.startsWith('Puzzle try ')) return `${t.slice(11, -2)} isn't the puzzle's answer, so the board stays as it was (try ${o.tries}).`
     if (t.startsWith('Puzzle step ✓')) return `${t.slice(14)} is right! The other side answers with the puzzle's move ${o.opponent}.`

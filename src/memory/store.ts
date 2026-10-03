@@ -14,6 +14,7 @@ export type Profile = {
   sessionMemory: string | null // last conversation, compressed by condense
   condense: { calls: number; before: number; after: number } // lifetime token savings
   puzzles: { solved: number; tried: number; seen: string[]; byTheme: Record<string, { solved: number; tried: number }> }
+  lessonsDone: string[] // Learn mode: pieces they've practised
 }
 
 const KEY = 'squarely.profile.v1'
@@ -32,6 +33,7 @@ const empty = (): Profile => ({
   sessionMemory: null,
   condense: { calls: 0, before: 0, after: 0 },
   puzzles: { solved: 0, tried: 0, seen: [], byTheme: {} },
+  lessonsDone: [],
 })
 
 export function loadProfile(): Profile {

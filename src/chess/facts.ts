@@ -13,7 +13,7 @@ const KID_NAME: Record<PieceSymbol, string> = {
   k: 'king',
 }
 
-const STD_NAME: Record<PieceSymbol, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' }
+export const STD_NAME: Record<PieceSymbol, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' }
 
 // Kids mode: friendly names, characters with faces, no notation. Off: plain chess vocabulary.
 let kidsMode = true

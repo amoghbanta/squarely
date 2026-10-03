@@ -86,7 +86,8 @@ const sqAt = (col: number, row: number, pov: Color): Square => {
 }
 
 export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastMove, lastGrade, checkSquare, disabled, onMove }: Props) {
-  const chess = useMemo(() => new Chess(fen), [fen])
+  // Lesson boards have no kings, so positions are loaded without the full validity check.
+  const chess = useMemo(() => new Chess(fen, { skipValidation: true }), [fen])
   const [selected, setSelected] = useState<Square | null>(null)
   const [cursor, setCursor] = useState<[number, number]>([4, 6])
   const ref = useRef<SVGSVGElement>(null)
