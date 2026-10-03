@@ -190,7 +190,8 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       result = await game.opponentMove()
       break
     case 'analyse_position':
-      result = await game.analysePosition()
+      // In a puzzle, "what's attacking me?" would give the answer away: it climbs the hint ladder instead.
+      result = game.getSnapshot().puzzle ? await game.puzzleHint() : await game.analysePosition()
       break
     case 'suggest_move':
       result = await game.suggestMove(typeof args.piece === 'string' ? args.piece : undefined)
@@ -203,7 +204,7 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       break
     case 'puzzle_hint':
       // Outside a puzzle, "hint" means the usual danger check.
-      result = game.getSnapshot().puzzle ? game.puzzleHint() : await game.analysePosition()
+      result = game.getSnapshot().puzzle ? await game.puzzleHint() : await game.analysePosition()
       break
     case 'stop_puzzle':
       result = await game.stopPuzzle()

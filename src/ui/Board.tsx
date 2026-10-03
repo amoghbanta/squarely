@@ -170,8 +170,9 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
 
   const onPointerUp = (e: PointerEvent<SVGSVGElement>) => {
     const pr = press.current
-    press.current = null
+    // Another finger's lift: ignore it (the press and any drag belong to the first finger).
     if (!pr || pr.id !== e.pointerId) return
+    press.current = null
     const a = at(e)
     const d = dragRef.current
     if (d) {

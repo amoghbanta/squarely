@@ -17,7 +17,7 @@ import {
   winProb,
 } from '../chess/facts'
 import { THEME_INFO, THEME_FOR_MISTAKE, pickPuzzle, themeFromWords, type Puzzle, type PuzzleTheme } from '../chess/puzzles'
-import { parseOffline } from '../agent/offline'
+import { hasMoveContent, heardMove } from '../chess/hearing'
 import { TALK_STYLE, type TalkStyle } from '../agent/prompt'
 import { resolveMove, type MoveIntent, type MoveOption } from '../chess/resolver'
 import { classifyPunishment, type Punishment } from '../chess/motifs'
@@ -137,24 +137,19 @@ const readKidsMode = () => {
 }
 
 /**
- * The player's own words win over the model's reading of them: if they named a piece or a square
- * (after fixing sound-alikes like "night" → knight), use that. The model's other fields stay.
+ * Use the player's own words (repaired for sound-alikes) to correct the model's reading, carefully:
+ * they fill fields the model left empty, and replace the moving piece only when the words name exactly
+ * one piece being moved ("night to G3" → knight). Castling is never added on top of a piece move.
  */
 function withHeard(intent: MoveIntent): MoveIntent {
   if (!intent.heard || intent.option || intent.san || intent.castle) return intent
-  const h = parseOffline(intent.heard)
-  if (h?.name !== 'make_move') return intent
-  const a = h.args as MoveIntent
-  if (a.castle) return { castle: a.castle }
-  return { ...intent, ...Object.fromEntries(Object.entries(a).filter(([, v]) => v !== undefined)) }
-}
-
-/** Do the player's words name a move at all (a piece, a square, castling, or an answer like "yes" / "the first one")? */
-function heardHasMove(heard: string, answering: boolean): boolean {
-  // Short answers only count while a "which one?" question is open.
-  if (answering && /\b(yes|yeah|yep|sure|ok|okay|that one|this one|first|second|third|1|2|3|4|one|two|three|four)\b/i.test(heard) && heard.trim().split(/\s+/).length <= 4)
-    return true
-  return parseOffline(heard)?.name === 'make_move'
+  const h = heardMove(intent.heard)
+  if (h.castle && !intent.piece && !intent.capture && !intent.to) return { castle: h.castle }
+  const out: MoveIntent = { ...intent }
+  if (h.piece && h.piece !== intent.piece) out.piece = h.piece as MoveIntent['piece']
+  if (h.to && !intent.to) out.to = h.to
+  if (h.from && !intent.from) out.from = h.from
+  return out
 }
 
 export class GameController {
@@ -309,6 +304,8 @@ export class GameController {
   }
 
   private overReason(): string | null {
+    // A puzzle's checkmate is the puzzle's answer, not the end of a game.
+    if (this.puzzle) return null
     const c = this.chess
     if (c.isCheckmate()) return c.turn() === this.kidColor ? 'checkmate_opponent_wins' : 'checkmate_kid_wins'
     if (c.isStalemate()) return 'stalemate'
@@ -359,7 +356,7 @@ export class GameController {
     // The model may have guessed a move from garbled words ("algo 1 2 3 yes" became b3). If the words it
     // heard hold no chess move at all, refuse and let it ask again. English only: other languages' piece
     // words aren't in the offline parser, so there we trust the model's reading.
-    if (intent.heard && !intent.option && this.settings.language === 'English' && !heardHasMove(intent.heard, !!this.pending?.length)) {
+    if (intent.heard && !intent.option && this.settings.language === 'English' && !hasMoveContent(intent.heard, this.pending !== null)) {
       this.log('Referee', 'Did not catch a move', { heard: intent.heard }, performance.now() - t0)
       return { result: { status: 'did_not_catch', heard: intent.heard, instruction: 'Those words have no move in them. Ask the player to say it again, like "horse to f3". Do not guess a move.' } }
     }
@@ -762,7 +759,7 @@ export class GameController {
   // the move) and every rung comes from the stored solution, so the coach never invents an answer.
   private puzzle: { p: Puzzle; theme: PuzzleTheme; step: number; hintLevel: number; hintsUsed: number; tries: number; solved: boolean } | null = null
   private lastPuzzleTheme: PuzzleTheme | null = null
-  private savedGame: { pgn: string; kidColor: Color; grades: (Grade | null)[]; kidMoves: KidMoveLog[] } | null = null
+  private savedGame: { pgn: string; kidColor: Color; grades: (Grade | null)[]; kidMoves: KidMoveLog[]; hintOpen: boolean; lastHintAtKidMove: number } | null = null
 
   private puzzleView(): PuzzleView | null {
     const z = this.puzzle
@@ -774,7 +771,7 @@ export class GameController {
       label: info.label,
       goal: this.kidsMode ? info.kidGoal : info.goal,
       rating: z.p.rating,
-      found: Math.floor((z.step - 1) / 2),
+      found: Math.floor(z.step / 2),
       total: Math.floor(z.p.moves.length / 2),
       hintLevel: z.hintLevel,
       solved: z.solved,
@@ -801,8 +798,10 @@ export class GameController {
     const why = asked ? 'the player asked for it' : !this.lastPuzzleTheme && weak === theme ? 'it practises a mistake Memory has seen before' : 'more of the same kind'
     // Park an unfinished game so "back to my game" can bring it back exactly.
     if (!this.puzzle && this.chess.history().length && !this.overReason()) {
-      this.savedGame = { pgn: this.chess.pgn(), kidColor: this.kidColor, grades: [...this.grades], kidMoves: [...this.kidMoves] }
+      this.savedGame = { pgn: this.chess.pgn(), kidColor: this.kidColor, grades: [...this.grades], kidMoves: [...this.kidMoves], hintOpen: this.hintOpen, lastHintAtKidMove: this.lastHintAtKidMove }
     }
+    // A finished game's "recorded" flag must not leak into the puzzle or the board after it.
+    this.gameRecorded = false
     const p = pickPuzzle(theme, this.profile.puzzles.seen)
     this.chess = new Chess(p.fen)
     // The puzzle starts with the opponent's move; the player is the side that answers it.
@@ -819,7 +818,10 @@ export class GameController {
     this.lastPuzzleTheme = theme
     this.emit()
     // Let the board settle, then show the opponent's move sliding in: that's what the player answers.
+    this.thinking = true
+    this.emit()
     await new Promise((r) => setTimeout(r, 700))
+    this.thinking = false
     const setup = this.playUci(p.moves[0])
     this.point([{ from: setup.from, to: setup.to, kind: 'move' }], [])
 
@@ -905,7 +907,10 @@ export class GameController {
     // Right so far: the opponent answers with the puzzle's line.
     this.point([{ from: mine.from, to: mine.to, kind: 'suggest' }], [])
     this.emit()
+    this.thinking = true
+    this.emit()
     await new Promise((res) => setTimeout(res, 650))
+    this.thinking = false
     const reply = this.playUci(z.p.moves[z.step])
     z.step++
     this.point([{ from: reply.from, to: reply.to, kind: 'move' }], [])
@@ -921,7 +926,11 @@ export class GameController {
   }
 
   /** Next rung of the hint ladder: 1 the idea, 2 which piece, 3 the move itself. */
-  puzzleHint(): Record<string, unknown> {
+  puzzleHint() {
+    return this.exclusive(() => this.puzzleHintInner())
+  }
+
+  private puzzleHintInner(): Record<string, unknown> {
     const z = this.puzzle
     if (!z) return { status: 'no_puzzle', instruction: 'There is no puzzle on. Offer one (start_puzzle).' }
     if (z.solved) return { status: 'already_solved' }
@@ -969,7 +978,7 @@ export class GameController {
 
   /** Leave puzzles: bring back the parked game if there was one. */
   stopPuzzle() {
-    return this.exclusive(() => {
+    return this.exclusive(async () => {
       if (!this.puzzle) return { status: 'no_puzzle' }
       this.puzzle = null
       this.pending = null
@@ -983,6 +992,8 @@ export class GameController {
         this.kidColor = g.kidColor
         this.grades = g.grades
         this.kidMoves = g.kidMoves
+        this.hintOpen = g.hintOpen
+        this.lastHintAtKidMove = g.lastHintAtKidMove
         const h = this.chess.history({ verbose: true }).at(-1)
         this.lastMove = h ? { from: h.from, to: h.to } : null
       } else {
@@ -991,10 +1002,21 @@ export class GameController {
         this.grades = []
         this.kidMoves = []
         this.lastMove = null
+        this.hintOpen = false
+        this.lastHintAtKidMove = -99
       }
+      this.gameRecorded = false
       this.say(g ? 'Back to our game!' : 'New game! You play white.')
       this.log('Referee', g ? 'Back to the game' : 'New game after puzzles')
-      return { status: g ? 'back_to_game' : 'new_game', you_play: colorName(this.kidColor), your_turn: this.chess.turn() === this.kidColor }
+      // Parked on the buddy's turn with no hint pending (e.g. a game started as black): let it move.
+      const opp = g && this.chess.turn() !== this.kidColor && !this.hintOpen ? await this.opponentMoveInner() : undefined
+      return {
+        status: g ? 'back_to_game' : 'new_game',
+        you_play: colorName(this.kidColor),
+        your_turn: this.chess.turn() === this.kidColor,
+        hint_still_open: this.hintOpen || undefined,
+        opponent_played: opp,
+      }
     })
   }
 

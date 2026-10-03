@@ -66,6 +66,16 @@ export class LiveVoice {
 
   private connecting: Promise<void> | null = null
 
+  /** Call synchronously inside a tap: iOS only lets audio start from a user gesture, not after an await. */
+  warmAudio() {
+    try {
+      this.outCtx ??= new AudioContext({ sampleRate: 24000 })
+      void this.outCtx.resume()
+    } catch {
+      /* no audio here; connect() will report it */
+    }
+  }
+
   /** One connect at a time: a second caller (typed text + board tap) waits on the same attempt. */
   connect(apiKey: string, systemInstruction: string, functionDeclarations: FunctionDeclaration[]) {
     this.connecting ??= this.connectInner(apiKey, systemInstruction, functionDeclarations).finally(() => {

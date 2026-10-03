@@ -35,7 +35,41 @@
   ok('garbled_not_played', r.status === 'did_not_catch' && game.chess.history().length === 0, r)
   r = await R('make_move', { san: 'e4', heard: "Let's start with E4." })
   ok('clear_still_plays', r.status === 'played', r)
-  // talk style by words
+  // review findings: heard words never add castling or swap in a target piece
+  const { heardMove } = await import('/src/chess/hearing.ts')
+  const H = (t, k, v) => ok(`heard "${t}" ${k}`, heardMove(t)[k] === v, heardMove(t))
+  H('bishop takes that castle', 'piece', 'bishop')
+  H('bishop takes that castle', 'castle', undefined)
+  H('I take your castle with my bishop', 'piece', 'bishop')
+  H('pawn to c3 so the knight cannot jump in', 'piece', 'pawn')
+  H('the one near my king', 'piece', undefined)
+  H('pawn in front of my king, two steps', 'piece', 'pawn')
+  H('pawn to e8 and make it a queen', 'piece', 'pawn')
+  H('castle kingside', 'castle', 'short')
+  ok('norm "done" is not d1', !normalizeSpeech('okay I am done, pawn to e4').includes('d1'), normalizeSpeech('okay I am done, pawn to e4'))
+  ok('norm "I see three ways"', !normalizeSpeech('I see three ways').includes('c3'), normalizeSpeech('I see three ways'))
+  ok('norm "knight to see three"', normalizeSpeech('knight to see three').includes('c3'), normalizeSpeech('knight to see three'))
+  // castling by the model is still fine; "takes that castle" plays the capture, never O-O
+  game.chess.load('4k2r/8/8/8/8/8/1B6/4K2R w Kk - 0 1')
+  r = await R('make_move', { piece: 'bishop', capture: 'rook', heard: 'bishop takes that castle' })
+  ok('takes_castle_not_O-O', r.status === 'played' && game.chess.history()[0] === 'Bxh8', { r, h: game.chess.history() })
+  await R('new_game', { color: 'white' })
+  // the guard lets real moves through
+  for (const t of ['knight to f3, your turn', 'pawn to e4 already', 'oops I meant knight to f3', 'Nf3.']) {
+    await R('new_game', { color: 'white' })
+    r = await R('make_move', { piece: t.includes('pawn') ? 'pawn' : 'knight', to: t.includes('e4') ? 'e4' : 'f3', heard: t })
+    ok(`guard allows "${t}"`, r.status === 'played', r)
+  }
+  await R('new_game', { color: 'white' })
+  r = await R('make_move', { piece: 'pawn', heard: 'pawn please' })
+  r = await R('make_move', { piece: 'pawn', which: 'left', heard: 'the one on the left' })
+  ok('answer to which-pawn passes guard', r.status !== 'did_not_catch', r)
+  await R('new_game', { color: 'white' })
+  // truthful "can't": e4 is reachable by a pawn at the start
+  r = await R('make_move', { piece: 'pawn', to: 'e4', from: 'd1' })
+  ok('no false cant', !/can't go to e4/.test(JSON.stringify(r)), r)
+  await R('new_game', { color: 'white' })
+
   const { parseOffline } = await import('/src/agent/offline.ts')
   ok('talk_less', parseOffline('can you talk less')?.args?.talk_style === 'brief', parseOffline('can you talk less'))
   r = await R('change_settings', { talk_style: 'chatty' })

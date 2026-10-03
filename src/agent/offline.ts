@@ -2,7 +2,7 @@
 // with a tiny keyword parser and template replies (spoken with the browser's speech synthesis).
 import type { FunctionCall } from '@google/genai'
 import type { PieceWord } from '../chess/resolver'
-import { normalizeSpeech } from '../chess/hearing'
+import { heardMove, normalizeSpeech } from '../chess/hearing'
 
 const THEME_WORDS: Record<string, string> = {
   'green|meadow': 'meadow',
@@ -27,9 +27,9 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   // Repair misheard chess words first ("night to G3" → "knight to g3").
   const t = normalizeSpeech(text)
   if (/\b(undo|take (it )?back|oops|try again)\b/.test(t)) return { name: 'undo', args: {} }
-  // Castling first: "castle" alone means the move, not the rook.
-  if (/\b(castle|castling)\b/.test(t) && !/\b(my|the|his|her) castle\b|castle (to|takes|on)\b/.test(t))
-    return { name: 'make_move', args: { castle: /long|queen/.test(t) ? 'long' : 'short' } }
+  // Castling first, but only when "castle" is the move, not a rook ("take that castle").
+  const heard = heardMove(text)
+  if (heard.castle) return { name: 'make_move', args: { castle: heard.castle } }
   if (/\b(keep (it|going|playing)|go on|play on|your (move|turn)|continue)\b/.test(t)) return { name: 'engine_reply', args: {} }
   const theme = Object.entries(THEME_WORDS).find(([re]) => new RegExp(re).test(t))
   if (theme && /board|colou?r|theme/.test(t)) return { name: 'change_settings', args: { board_theme: theme[1] } }
@@ -41,15 +41,15 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   if (/kids? mode/.test(t)) return { name: 'change_settings', args: { kids_mode: !/off|grown|adult/.test(t) } }
   if (/harder|tougher/.test(t)) return { name: 'change_settings', args: { level: 4 } }
   if (/easier/.test(t)) return { name: 'change_settings', args: { level: 1 } }
+  if (/^(hint|give me a hint|help me|i'?m stuck|stuck|show me)$|\b(a hint|i'?m stuck)\b/.test(t)) return { name: 'puzzle_hint', args: {} }
   if (/help|what can i say/.test(t) && !/attack/.test(t)) return { name: 'show_screen', args: { screen: 'help' } }
-  if (/close|back to (the )?game/.test(t)) return { name: 'show_screen', args: { screen: 'game' } }
+  if (/back to (my|the|our) game/.test(t)) return { name: 'stop_puzzle', args: {} }
+  if (/\bclose\b/.test(t)) return { name: 'show_screen', args: { screen: 'game' } }
   if (/play (as )?black/.test(t)) return { name: 'new_game', args: { color: 'black' } }
   if (/puzzle|another one|next one/.test(t)) {
     if (/stop|enough|no more|back to (my|the|our) game|quit/.test(t)) return { name: 'stop_puzzle', args: {} }
     return { name: 'start_puzzle', args: { theme: t } }
   }
-  if (/back to (my|the|our) game/.test(t)) return { name: 'stop_puzzle', args: {} }
-  if (/^(hint|help me|i'?m stuck|stuck|show me)\b/.test(t)) return { name: 'puzzle_hint', args: {} }
   if (/was (that|it) (good|bad|ok)|why was|should i have/.test(t)) return { name: 'review_move', args: {} }
   if (/best move|good move|what should|show me a move|suggest/.test(t)) {
     const piece = WORDS.find(([re]) => re.test(t))?.[1]
@@ -72,16 +72,17 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   const squares = t.match(/\b[a-h][1-8]\b/g) ?? []
   if (squares.length === 2) Object.assign(args, { from: squares[0], to: squares[1] })
   else if (squares.length === 1) args.to = squares[0]
+  // The piece being moved comes from the strict reader (never a target like "so the knight can't...").
+  if (heard.piece) args.piece = heard.piece
   const takeIdx = t.search(/\b(take|takes|capture|eat|x)\b/)
-  for (const [re, piece] of WORDS) {
-    const m = t.match(re)
-    if (!m || m.index === undefined) continue
-    if (takeIdx >= 0 && m.index > takeIdx) args.capture ??= piece
-    else args.piece ??= piece
+  if (takeIdx >= 0) {
+    const victim = WORDS.find(([re]) => re.test(t.slice(takeIdx)))?.[1]
+    if (victim && victim !== args.piece) args.capture = victim
   }
   if (/middle|center|centre/.test(t)) args.area = 'middle'
   if (!Object.keys(args).length) {
-    if (/^[a-z0-9+#=-]{2,7}$/i.test(text.trim())) return { name: 'make_move', args: { san: text.trim() } }
+    const san = text.trim().replace(/[.!?]+$/, '')
+    if (/^[a-z0-9+#=-]{2,7}$/i.test(san)) return { name: 'make_move', args: { san } }
     return null
   }
   return { name: 'make_move', args }
@@ -118,7 +119,12 @@ export function phraseOffline(name: string, r: Record<string, unknown>): string 
     if (r.level === 3) return `The answer is the green arrow: ${r.answer}.`
     return 'There is no puzzle on right now. Say "give me a puzzle".'
   }
-  if (name === 'stop_puzzle') return r.status === 'back_to_game' ? 'Back to our game! Your move.' : 'New game! You play white.'
+  if (name === 'stop_puzzle') {
+    if (r.status === 'no_puzzle') return "We're already in our game."
+    const opp = r.opponent_played as { piece: string; to: string } | undefined
+    if (r.status === 'new_game') return 'New game! You play white.'
+    return `Back to our game!${opp ? ` I moved my ${opp.piece} to ${opp.to}.` : ''} ${r.your_turn ? 'Your move.' : 'Say undo or keep going.'}`
+  }
   if (name === 'suggest_move' && r.suggestion) {
     const f = r.suggestion as { piece: string; to: string; to_where: string; captures: string | null; check: boolean }
     return `Look at the green arrow: your ${f.piece} to ${f.to}${f.captures ? `, taking the ${f.captures}` : ''}${f.check ? ', with check' : ''}.`

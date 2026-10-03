@@ -25,6 +25,7 @@ const send = (method, params = {}) => new Promise((r) => { const i = ++id; pendi
 await send('Runtime.enable')
 await sleep(Number(waitMs))
 await send('Page.enable')
+if (process.env.DARK) await send('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] })
 await send('Emulation.setDeviceMetricsOverride', { width: Number(process.env.W || 1400), height: Number(process.env.H || 1000), deviceScaleFactor: 1, mobile: !!process.env.MOBILE })
 for (const ex of exprs) {
   if (ex.startsWith('SHOT:')) {

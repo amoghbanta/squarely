@@ -184,6 +184,7 @@ export function App() {
 
   /** One path for typed text and quick-action chips: Live if connected, else the offline parser. */
   const say = async (t: string) => {
+    if (hasKey) voice.current!.warmAudio()
     game.addTranscript('kid', t)
     if (await ensureLive()) return voice.current!.sendText(t)
     const call = parseOffline(t)
@@ -250,6 +251,7 @@ export function App() {
 
   // Tap / keyboard moves go through the same Referee tool, then the voice agent is told what happened.
   const onBoardMove = async (from: Square, to: Square) => {
+    if (hasKey) voice.current!.warmAudio()
     const r = await runTool(game, { name: 'make_move', args: { from, to } }, 'tap')
     if (await ensureLive()) voice.current!.sendEvent(`[The player moved on the screen. make_move result: ${JSON.stringify(r)}. React per the rules.]`)
     else speakLocal(phraseOffline('make_move', r))
@@ -257,6 +259,7 @@ export function App() {
 
   /** Buttons run their tool at once (no waiting on the model), then the voice is told what happened. */
   const act = async (name: string, args: Record<string, unknown> = {}, label = name) => {
+    if (hasKey) voice.current!.warmAudio()
     const r = await runTool(game, { name, args }, 'tap')
     if (await ensureLive()) voice.current!.sendEvent(`[The player tapped the "${label}" button and the app ALREADY ran ${name} for them. Do not call ${name}, new_game or stop_puzzle yourself now. Result: ${JSON.stringify(r)}. React to it in one short sentence per the rules.]`)
     else speakLocal(phraseOffline(name, r))

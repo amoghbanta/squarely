@@ -581,3 +581,8 @@ a { color: var(--tint); }
 @media (min-width: 900px) { :root { --board-w: min(100%, calc(100dvh - 190px), 860px); } }
 @media (max-width: 899px) { :root { --board-w: 100%; } }
 .puzzle-line, .move-strip { width: var(--board-w); max-width: var(--board-w); }
+.sheet-card p { text-align: left; }
+.sheet-card p.caption.center { text-align: center; }
+.sheet-card .scout p { margin: 0 14px; color: var(--label-2); font-size: 14px; }
+.link-btn { border-radius: 10px; padding: 0 10px; }
+.link-btn:focus:not(:focus-visible) { outline: none; }

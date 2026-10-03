@@ -141,7 +141,9 @@ function nearestLegal(chess: Chess, intent: MoveIntent, legal: Move[]): Resoluti
   const picks = ranked.filter((r) => r.sc >= top - 1).slice(0, 3).map((r) => r.m)
   const me = chess.turn()
   const said = [intent.piece && nameOf(SYM[intent.piece]), to && `to ${to}`].filter(Boolean).join(' ')
-  const cant = intent.piece && to ? `A ${nameOf(SYM[intent.piece])} can't go to ${to} right now.` : `I'm not sure I heard "${said}" right.`
+  // Only claim "can't" when it's true: no legal move of that piece reaches that square.
+  const reachable = !!intent.piece && !!to && legal.some((m) => m.piece === SYM[intent.piece!] && m.to === to)
+  const cant = intent.piece && to && !reachable ? `A ${nameOf(SYM[intent.piece])} can't go to ${to} right now.` : `I'm not sure I heard "${said}" right.`
   return {
     status: 'ask',
     question: `${cant} Did you mean${picks.length > 1 ? ' one of these' : ''}?`,
