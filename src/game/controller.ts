@@ -581,10 +581,28 @@ export class GameController {
   }
 
   // ---------- Scout (background agent) ----------
-  async scout(source: ScoutSource): Promise<Record<string, unknown>> {
-    if (this.scouting) return { status: 'already_scouting' }
+  scout(source: ScoutSource): Record<string, unknown> {
+    if (this.scouting) {
+      return { status: 'already_scouting', progress: this.scoutProgress, instruction: 'Say the Scout is still studying their games and you will tell them as soon as it is done. Keep playing.' }
+    }
     this.scouting = true
+    const who = source.username ?? 'your'
+    this.scoutProgress = source.site === 'chesscom' ? `Looking up ${who} on chess.com` : 'Reading your games'
     this.emit()
+    // The Scout works in the background; the voice gets a hand-off line now and the findings later.
+    void this.scoutJob(source).then((r) => this.onScoutDone?.(r))
+    return {
+      status: 'started',
+      username: who,
+      instruction:
+        'Right now, say excitedly in ONE or TWO short sentences that your teammate agent, the Scout, is fetching their chess.com games and studying every move in the background, and that you will share what it finds. Then invite them to keep playing (say whose turn it is).',
+    }
+  }
+
+  /** Called when a background Scout run ends (the App passes it to the voice, or speaks it offline). */
+  onScoutDone: ((result: Record<string, unknown>) => void) | null = null
+
+  private async scoutJob(source: ScoutSource): Promise<Record<string, unknown>> {
     const t0 = performance.now()
     try {
       const report = await runScout(source, this.apiKey, (b, a) => this.recordSavings('Scout mistake log', b, a), (title, detail) => {
@@ -619,6 +637,7 @@ export class GameController {
       return { status: 'failed', reason: String(e) }
     } finally {
       this.scouting = false
+      this.scoutProgress = ''
       this.emit()
     }
   }
@@ -714,8 +733,23 @@ export class GameController {
 
   // ---------- Pointing (board annotations) and mood ----------
   /** Squarely "points" at the board: only squares that a tool result just computed. */
+  private markTimer: ReturnType<typeof setTimeout> | undefined
+
   private point(arrows: Arrow[], squares: Mark[]) {
     this.marks = { arrows, squares }
+    clearTimeout(this.markTimer)
+    const sticky = arrows.some((a) => a.kind === 'option')
+    if (!sticky && (arrows.length || squares.length)) {
+      const danger = squares.some((q) => q.kind === 'danger')
+      this.markTimer = setTimeout(() => this.clearMarks(), danger ? 15000 : 8000)
+    }
+    this.emit()
+  }
+
+  clearMarks() {
+    clearTimeout(this.markTimer)
+    if (!this.marks.arrows.length && !this.marks.squares.length) return
+    this.marks = { squares: [], arrows: [] }
     this.emit()
   }
 

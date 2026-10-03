@@ -82,7 +82,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
     name: 'scout_games',
     behavior: Behavior.NON_BLOCKING,
     description:
-      'Scout: in the background, fetch the child\'s recent chess.com games, review every move with the engine, find their recurring mistakes and write a practice plan. Takes about a minute; keep playing and chatting while it works. Call when the child or a grown-up gives a chess.com username.',
+      'Scout: in the background, fetch the child\'s recent chess.com games, review every move with the engine, find their recurring mistakes and write a practice plan. Returns at once with status started (announce the hand-off to the Scout); the findings arrive later as a [Scout finished] message. Keep playing meanwhile. Call when the child or a grown-up gives a chess.com username.',
     parametersJsonSchema: {
       type: 'object',
       properties: { username: { type: 'string', description: 'chess.com username, spelled as given' } },
@@ -163,7 +163,7 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       result = game.setLevel(Number(args.level ?? 2))
       break
     case 'scout_games':
-      result = await game.scout({ site: 'chesscom', username: String(args.username ?? '') })
+      result = game.scout({ site: 'chesscom', username: String(args.username ?? '') })
       break
     case 'new_game':
       result = await game.newGame(args.color === 'black' || args.color === 'white' ? args.color : undefined)

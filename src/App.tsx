@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Fo
 import type { Square } from 'chess.js'
 import { game, type TranscriptLine } from './game/controller'
 import { Board } from './ui/Board'
+import { ScoutActivity } from './ui/ScoutActivity'
 import { TracePanel } from './ui/TracePanel'
 import { LiveVoice, LIVE_MODEL, type LiveState } from './voice/live'
 import { runTool, toolDeclarations } from './agent/tools'
@@ -156,6 +157,29 @@ export function App() {
     else speakLocal(phraseOffline('make_move', r))
   }
 
+  // Background Scout finished: hand its findings to the voice once the buddy stops talking,
+  // so it never cuts itself off. Offline, read them out.
+  const scoutNote = useRef<Record<string, unknown> | null>(null)
+  const flushScout = useCallback(() => {
+    const r = scoutNote.current
+    if (!r) return
+    const v = voice.current!
+    if (v.connected && speaking) return
+    scoutNote.current = null
+    game.noteSource('scout_games')
+    if (v.connected) {
+      const { instruction: _i, ...facts } = r
+      v.sendEvent(`[Scout finished: your teammate Scout agent is done studying the games. Result: ${JSON.stringify(facts)}. Tell the player now in ONE or TWO warm sentences (use plan.buddy_line if present), then get back to the game.]`)
+    } else speakLocal(phraseOffline('scout_games', r))
+  }, [speaking]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    game.onScoutDone = (r) => {
+      scoutNote.current = r
+      flushScout()
+    }
+    flushScout()
+  }, [flushScout])
+
   // Voice can switch the mic off ("stop listening"); the UI owns the mic.
   useEffect(() => {
     if (!s.micOffSeq) return
@@ -302,6 +326,15 @@ export function App() {
             <span className="dot" />
             {status}
           </div>
+          <ScoutActivity
+            scouting={s.scouting}
+            progress={s.scoutProgress}
+            report={s.scoutReport}
+            onOpen={() => {
+              setTab('scout')
+              setSheetOpen(true)
+            }}
+          />
           <Board
             marks={s.marks}
             kidsMode={s.kidsMode}
@@ -564,12 +597,29 @@ export function App() {
           <form onSubmit={saveKey} className="stack">
             <Avatar mood="happy" size={88} className="hero-avatar" />
             <h2>Hi, I'm Squarely!</h2>
-            <p>
-              Squarely uses Gemini Live, straight from your browser. Paste a key from{' '}
-              <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-                Google AI Studio
-              </a>
-              . It goes only to Google. Squarely has no server.
+            <p>I talk with Gemini Live. To wake me up, I need a free Gemini key from Google AI Studio.</p>
+            <a className="studio-cta" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+              <span className="studio-badge" aria-hidden>✦</span>
+              <span>
+                <strong>Get a free key in Google AI Studio</strong>
+                <span>About a minute with any Google account. No credit card.</span>
+              </span>
+              <span aria-hidden>↗</span>
+            </a>
+            <ol className="studio-steps">
+              <li>Sign in at AI Studio</li>
+              <li>Tap <b>Create API key</b></li>
+              <li>Paste it below</li>
+            </ol>
+            <p className="condense-note">
+              <b>Your free tier goes further here.</b> Before Gemini reads Squarely's memory and Scout notes,{' '}
+              <a href="https://condense.chat" target="_blank" rel="noreferrer">
+                condense.chat
+              </a>{' '}
+              shrinks them, so each call uses fewer of your tokens.
+            </p>
+            <p className="caption">
+              Gemini's free tier is plenty to try Squarely. Your key goes only from this browser to Google; we never see it.
             </p>
             <input type="password" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} placeholder="Paste your Gemini API key" aria-label="Gemini API key" />
             <label className="check">

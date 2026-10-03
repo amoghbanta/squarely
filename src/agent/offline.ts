@@ -95,6 +95,8 @@ export function phraseOffline(name: string, r: Record<string, unknown>): string 
   if (name === 'change_settings') return r.status === 'ok' ? 'Done!' : 'I could not change that.'
   if (name === 'scout_games') {
     const plan = r.plan as { buddy_line?: string } | null
+    if (r.status === 'started') return `My teammate the Scout is fetching ${r.username}'s chess.com games and studying every move in the background. Let's keep playing!`
+    if (r.status === 'already_scouting') return 'The Scout is still studying your games. I will tell you as soon as it is done!'
     return r.status === 'done' ? (plan?.buddy_line ?? `I studied ${r.games_reviewed} of your games.`) : `I could not study those games: ${r.reason ?? r.status}.`
   }
   if (name === 'describe_board') {

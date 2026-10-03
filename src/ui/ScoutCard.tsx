@@ -3,7 +3,7 @@ import { useState, type FormEvent } from 'react'
 import type { ScoutReport } from '../scout/scout'
 import type { Profile } from '../memory/store'
 
-const MOTIF_LABEL: Record<string, string> = {
+export const MOTIF_LABEL: Record<string, string> = {
   fork: 'Forks (one piece attacks two)',
   hanging_piece: 'Pieces left unprotected',
   piece_in_danger: 'Pieces walking into danger',
