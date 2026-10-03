@@ -66,12 +66,12 @@ export function humanize(e: TraceEntry): string {
     const tool = t.slice(2)
     if (t.startsWith('→')) {
       const what = tool === 'make_move' ? `: ${moveWords(o)}` : tool === 'scout_games' && o.username ? ` (${o.username})` : tool === 'remember' && o.value ? `: “${o.value}”` : ''
-      if (o._brain === 'tap') return `The player moved on the board${what}. Sent straight to the Referee.`
+      if (o._brain === 'tap') return tool === 'make_move' ? `The player moved on the board${what}. Sent straight to the Referee.` : `The player tapped a button. ${TOOL_ASK[tool] ?? 'Called a tool'}${what}.`
       if (o._brain === 'offline') return `Offline helper understood: ${tool}. ${TOOL_ASK[tool] ?? 'Called a tool'}${what}.`
       return `Gemini decided to call ${tool}. ${TOOL_ASK[tool] ?? 'Called a tool'}${what}.`
     }
     const st = o.status ? String(o.status).replace(/_/g, ' ') : 'done'
-    if (o._brain === 'tap') return `Referee answered (${st}).`
+    if (o._brain === 'tap') return `Done (${st}). Gemini is told the result so it can react.`
     if (o._brain === 'offline') return `Answer ready (${st}). Read out with a template, no AI involved.`
     return `Answer handed back to Gemini (${st}). It turns these facts into words.`
   }

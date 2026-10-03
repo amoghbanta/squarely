@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type Fo
 import type { Square } from 'chess.js'
 import { localVoice, type LocalVoiceStatus } from './voice/localVoice'
 import { game, type PuzzleView, type TranscriptLine } from './game/controller'
+import { PUZZLE_THEMES, THEME_INFO, type PuzzleTheme } from './chess/puzzles'
 import { Board } from './ui/Board'
 import { MoveStrip } from './ui/MoveStrip'
 import { ScoutActivity } from './ui/ScoutActivity'
@@ -15,7 +16,7 @@ import { ScoutCard } from './ui/ScoutCard'
 import { Modal } from './ui/Modal'
 import { BOARD_THEMES, PIECE_STYLES, type BoardTheme, type PieceStyle } from './ui/themes'
 import { Group, Segmented, SwitchRow } from './ui/controls'
-import { GearIcon, HelpIcon, KeyboardIcon, MicIcon, MoreIcon, SendIcon } from './ui/icons'
+import { ChatIcon, KeyboardIcon, MicIcon, PersonIcon, SendIcon } from './ui/icons'
 import { BRAIN_MODEL } from './scout/scout'
 import { BrowserEars, earsSupported } from './voice/browserEars'
 
@@ -29,7 +30,8 @@ const readKey = () => {
   }
 }
 
-type Tab = 'coach' | 'agent' | 'scout' | 'settings'
+// The side panel (a sheet on phones) has two views: what was said, and what the agent did.
+type Tab = 'chat' | 'agent'
 
 /** Which tool backs a spoken line, in words a judge or parent understands. */
 const RECEIPT: Record<string, string> = {
@@ -51,8 +53,6 @@ const RECEIPT: Record<string, string> = {
 }
 
 const LANGUAGES = ['English', 'Svenska', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', 'Nederlands', 'Polski', 'Türkçe', 'العربية', 'हिन्दी', '中文', '日本語', '한국어']
-
-const QUICK = ['Give me a puzzle', 'Show me a good move', 'Was that good?', "What's attacking me?", 'What opening is this?', 'Undo']
 
 const PHONE_QUERY = '(max-width: 899px)'
 const usePhone = () => {
@@ -96,8 +96,9 @@ export function App() {
     setShowGrownUp(false)
     game.closePanel()
   }
-  const [tab, setTab] = useState<Tab>('coach')
+  const [tab, setTab] = useState<Tab>(() => (game.settings.showTrace ? 'agent' : 'chat'))
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [youOpen, setYouOpen] = useState(false)
   const voice = useRef<LiveVoice | null>(null)
 
   voice.current ??= new LiveVoice({
@@ -126,7 +127,7 @@ export function App() {
   const connected = liveState === 'live'
   const hasKey = apiKey.trim().length > 0
   game.apiKey = hasKey ? apiKey.trim() : null
-  const modalOpen = !apiKey || (!!s.panel && s.panel !== 'scout')
+  const modalOpen = !apiKey || youOpen || (!!s.panel && s.panel !== 'scout')
 
   const start = useCallback(async () => {
     const v = voice.current!
@@ -250,6 +251,13 @@ export function App() {
     else speakLocal(phraseOffline('make_move', r))
   }
 
+  /** Buttons run their tool at once (no waiting on the model), then the voice is told what happened. */
+  const act = async (name: string, args: Record<string, unknown> = {}, label = name) => {
+    const r = await runTool(game, { name, args }, 'tap')
+    if (await ensureLive()) voice.current!.sendEvent(`[The player tapped the "${label}" button and the app ALREADY ran ${name} for them. Do not call ${name}, new_game or stop_puzzle yourself now. Result: ${JSON.stringify(r)}. React to it in one short sentence per the rules.]`)
+    else speakLocal(phraseOffline(name, r))
+  }
+
   // Background Scout finished: hand its findings to the voice once the buddy stops talking,
   // so it never cuts itself off. Offline, read them out.
   const scoutNote = useRef<Record<string, unknown> | null>(null)
@@ -304,16 +312,15 @@ export function App() {
     return () => document.removeEventListener('visibilitychange', onHide)
   }, [])
 
-  // "Show me what the Scout found": switch the panel (and open the sheet on phones).
+  // "Show me what the Scout found": the Scout lives in the You sheet.
   useEffect(() => {
     if (s.panel !== 'scout') return
-    setTab('scout')
-    setSheetOpen(true)
+    setYouOpen(true)
     game.closePanel()
   }, [s.panel])
   // "Show / hide the agent trace" by voice.
   useEffect(() => {
-    setTab((t) => (s.settings.showTrace ? 'agent' : t === 'agent' ? 'coach' : t))
+    setTab(s.settings.showTrace ? 'agent' : 'chat')
   }, [s.settings.showTrace])
 
   const setKids = (on: boolean) => {
@@ -396,30 +403,199 @@ export function App() {
   const lastKid = [...s.transcript].reverse().find((l) => l.who === 'kid')
   const lastBuddy = [...s.transcript].reverse().find((l) => l.who === 'buddy')
 
-  const openTab = (t: Tab) => {
-    setTab(t)
-    if (phone) setSheetOpen(true)
+  // One row of next steps under the board, chosen by what's happening. Each also works by voice.
+  type Action = { label: string; run: () => void; primary?: boolean }
+  const kidHasMoved = s.moves.some((m) => m.color === s.kidColor)
+  const actions: Action[] = s.pendingOptions?.length
+    ? []
+    : s.puzzle
+      ? s.puzzle.solved
+        ? [
+            { label: 'Next puzzle', primary: true, run: () => void act('start_puzzle', { theme: s.puzzle!.theme }, 'Next puzzle') },
+            { label: 'Back to game', run: () => void act('stop_puzzle', {}, 'Back to game') },
+          ]
+        : [
+            { label: ['Hint', 'Which piece?', 'Show me'][s.puzzle.hintLevel] ?? 'Show me', primary: true, run: () => void act('puzzle_hint', {}, 'Hint') },
+            { label: 'Skip', run: () => void act('start_puzzle', { theme: s.puzzle!.theme }, 'Skip puzzle') },
+          ]
+      : s.over
+        ? [
+            { label: 'Play again', primary: true, run: () => void act('new_game', {}, 'Play again') },
+            { label: 'Summary', run: () => game.showPanel('parent_summary') },
+          ]
+        : s.hintOpen
+          ? [
+              { label: '↩ Try again', primary: true, run: () => void act('undo', {}, 'Try again') },
+              { label: 'Keep going', run: () => void act('engine_reply', {}, 'Keep going') },
+            ]
+          : [
+              { label: 'Good move?', run: () => void act('suggest_move', {}, 'Show me a good move') },
+              ...(kidHasMoved ? [{ label: 'Was that good?', run: () => void act('review_move', {}, 'Was that good?') }] : []),
+              { label: 'Any danger?', run: () => void act('analyse_position', {}, "What's attacking me?") },
+            ]
+
+  const mode = s.puzzle ? 'puzzles' : 'play'
+  const setMode = (m: 'play' | 'puzzles') => {
+    if (m === mode) return
+    void (m === 'puzzles' ? act('start_puzzle', {}, 'Puzzles') : act('stop_puzzle', {}, 'Play'))
   }
+
+  // What Squarely just said, and what you can do next.
+  const now = (
+    <div className="now">
+    <div className="captions" aria-hidden>
+      {heard ? <p className="cap-kid heard">{heard}…</p> : lastKid && <p className="cap-kid">{lastKid.text}</p>}
+      {lastBuddy ? (
+        <p className="cap-buddy">
+          {lastBuddy.text}
+          <Receipts sources={lastBuddy.sources} />
+        </p>
+      ) : (
+        <p className="cap-buddy muted">{s.puzzle ? s.puzzle.goal : hasKey ? 'Tap Squarely and say hi.' : earsSupported ? 'Tap Squarely and say a move, like "horse to the middle".' : 'Type a move like "knight f3".'}</p>
+      )}
+    </div>
+
+    {s.pendingOptions && s.pendingOptions.length > 0 ? (
+      <div className="options" role="group" aria-label="Which move did you mean?">
+        {s.pendingOptions.map((o, i) => (
+          <button key={o.san} onClick={() => void act('make_move', { option: i + 1 }, `option ${i + 1}`)}>
+            <b>{i + 1}</b> {o.label}
+          </button>
+        ))}
+      </div>
+    ) : (
+      <div className="actions" role="group" aria-label="Next steps">
+        {actions.map((a) => (
+          <button key={a.label} className={a.primary ? 'act primary' : 'act'} onClick={a.run} disabled={s.thinking} autoFocus={a.primary && s.hintOpen}>
+            {a.label}
+          </button>
+        ))}
+      </div>
+    )}
+
+    {problem && (
+      <div className="problem" role="alert">
+        <span>{problem.text}</span>
+        {problem.action === 'key' ? (
+          <button className="pill-btn" onClick={forgetKey}>
+            Change key
+          </button>
+        ) : (
+          <button className="pill-btn" onClick={() => void start()}>
+            Reconnect
+          </button>
+        )}
+      </div>
+    )}
+
+    </div>
+  )
+
+  // Talk button with the keyboard beside it (on phones it's pinned to the bottom).
+  // Typing: a composer like Messages (always under the panel on desktop, swapped in for the dock on phones).
+  const composer = (
+    <form onSubmit={submitText} className="type">
+      <label htmlFor="say" className="sr-only">
+        Type instead of talking
+      </label>
+      <input id="say" autoFocus={phone} value={text} onChange={(e) => setText(e.target.value)} placeholder={connected ? 'Type to Squarely…' : 'Type a move, like "knight f3"'} enterKeyHint="send" />
+      <button type="submit" className="send" aria-label="Send">
+        <SendIcon />
+      </button>
+      {phone && (
+        <button type="button" className="icon-btn" aria-label="Back to voice" onClick={() => setTyping(false)}>
+          <MicIcon />
+        </button>
+      )}
+    </form>
+  )
+
+  // Squarely's face is the talk button.
+  const talk = (
+    <div className="mic-wrap">
+      <button
+        className={`mic ${micOn || earsOn ? 'on' : ''} ${speaking ? 'speaking' : ''} ${liveState === 'connecting' ? 'connecting' : ''}`}
+        onClick={hasKey ? toggleMic : earsSupported ? toggleEars : () => setTyping(true)}
+        disabled={liveState === 'connecting'}
+        aria-pressed={micOn || earsOn}
+        aria-label={micOn || earsOn ? 'Stop listening' : 'Talk to Squarely'}
+        style={{ ['--lvl' as string]: String(Math.min(1, level * 5)) }}
+      >
+        <Avatar mood={mood} level={outLevel} size={84} />
+        {(micOn || earsOn) && (
+          <span className="rec" aria-hidden>
+            <MicIcon />
+          </span>
+        )}
+      </button>
+      <span className="mic-label">{micLabel}</span>
+    </div>
+  )
+
+  const dock = (
+    <div className="dock">
+      {typing ? (
+        composer
+      ) : (
+        <>
+          <button className="icon-btn big" aria-label="Type instead" onClick={() => setTyping(true)}>
+            <KeyboardIcon />
+          </button>
+          {talk}
+          <button className="icon-btn big" aria-label="Conversation and agent steps" onClick={() => setSheetOpen(true)}>
+            <ChatIcon />
+          </button>
+        </>
+      )}
+    </div>
+  )
+
+  const side = (
+    <>
+      <Segmented
+        label="Panel"
+        value={tab}
+        onChange={(t) => {
+          setTab(t)
+          game.changeSettings({ show_agent_trace: t === 'agent' })
+        }}
+        options={[
+          { value: 'chat', label: 'Conversation' },
+          { value: 'agent', label: 'Agent steps' },
+        ]}
+      />
+      <div className="side-body">
+        {tab === 'chat' ? (
+          <Transcript lines={s.transcript} />
+        ) : (
+          <>
+            <p className="caption">Gemini decides what to do next. Every fact it says comes from chess.js, Stockfish or the puzzle's own solution.</p>
+            <TracePanel trace={s.trace} />
+          </>
+        )}
+      </div>
+    </>
+  )
 
   return (
     <div className={`app ${phone ? 'is-phone' : ''}`}>
       <header className="topbar" inert={modalOpen}>
         <div className="brand">
-          <Avatar mood={s.mood === 'happy' ? 'happy' : 'idle'} size={38} className="logo-avatar" />
-          <div>
-            <h1>Squarely</h1>
-            <p className="tagline">{s.kidsMode ? 'Chess by voice, with a coach that never makes things up.' : 'Voice chess coach. Every fact checked by the engine.'}</p>
-          </div>
+          <Avatar mood={s.mood === 'happy' ? 'happy' : 'idle'} size={34} className="logo-avatar" />
+          {!phone && <h1>Squarely</h1>}
         </div>
-        <div className="top-actions">
-          {s.profile.name && <span className="hello">Hi, {s.profile.name}</span>}
-          <button className="icon-btn" onClick={() => game.showPanel('help')} aria-label="What can I say?">
-            <HelpIcon />
-          </button>
-          <button className="icon-btn" onClick={() => openTab('settings')} aria-label="Settings">
-            <GearIcon />
-          </button>
-        </div>
+        <Segmented
+          label="Mode"
+          value={mode}
+          onChange={setMode}
+          options={[
+            { value: 'play', label: 'Play' },
+            { value: 'puzzles', label: 'Puzzles' },
+          ]}
+        />
+        <button className="profile-btn" onClick={() => setYouOpen(true)} aria-label={s.profile.name ? `${s.profile.name}: settings and progress` : 'Settings and progress'}>
+          {s.profile.name ? s.profile.name[0].toUpperCase() : <PersonIcon />}
+        </button>
       </header>
 
       <main className="layout" inert={modalOpen}>
@@ -428,15 +604,7 @@ export function App() {
             <span className="dot" />
             {status}
           </div>
-          <ScoutActivity
-            scouting={s.scouting}
-            progress={s.scoutProgress}
-            report={s.scoutReport}
-            onOpen={() => {
-              setTab('scout')
-              setSheetOpen(true)
-            }}
-          />
+          <ScoutActivity scouting={s.scouting} progress={s.scoutProgress} report={s.scoutReport} onOpen={() => setYouOpen(true)} />
           <Board
             marks={s.marks}
             kidsMode={s.kidsMode}
@@ -445,118 +613,27 @@ export function App() {
             fen={s.fen}
             pov={s.kidColor}
             lastMove={s.lastMove}
-            lastGrade={s.moves.at(-1)?.grade ?? null}
+            lastGrade={s.puzzle ? null : (s.moves.at(-1)?.grade ?? null)}
             checkSquare={s.checkSquare}
-            disabled={s.thinking || !!s.over}
+            disabled={s.thinking || (!!s.over && !s.puzzle) || !!s.puzzle?.solved}
             onMove={onBoardMove}
           />
-          {s.puzzle ? <PuzzleBar pz={s.puzzle} say={(t) => void say(t)} /> : <MoveStrip moves={s.moves} kidColor={s.kidColor} />}
-
-          <div className="captions" aria-hidden>
-            {heard ? <p className="cap-kid heard">{heard}…</p> : lastKid && <p className="cap-kid">{lastKid.text}</p>}
-            {lastBuddy ? (
-              <p className="cap-buddy">
-                {lastBuddy.text}
-                <Receipts sources={lastBuddy.sources} />
-              </p>
-            ) : (
-              <p className="cap-buddy muted">{hasKey ? 'Tap the mic and say hi.' : earsSupported ? 'Tap the mic and say a move, like "horse to the middle".' : 'Type a move like "knight f3", or add a Gemini key to talk.'}</p>
-            )}
-          </div>
-
-          {s.pendingOptions && s.pendingOptions.length > 0 && (
-            <div className="options" role="group" aria-label="Which move did you mean?">
-              {s.pendingOptions.map((o, i) => (
-                <button key={o.san} onClick={() => void say(`option ${i + 1}`)}>
-                  <b>{i + 1}</b> {o.label}
-                </button>
-              ))}
-            </div>
+          {s.puzzle ? (
+            <PuzzleLine pz={s.puzzle} onTheme={(t) => void act('start_puzzle', { theme: t }, `${THEME_INFO[t].label} puzzle`)} />
+          ) : (
+            <MoveStrip moves={s.moves} kidColor={s.kidColor} />
           )}
 
-          {s.hintOpen && !s.over && (
-            <div className="hint-actions" role="group" aria-label="What next?">
-              <button className="primary" autoFocus onClick={() => void say('undo')}>
-                ↩ Try again
-              </button>
-              <button className="pill-btn" onClick={() => void say('keep it')}>
-                Keep going ▶
-              </button>
-            </div>
-          )}
-
-          {problem && (
-            <div className="problem" role="alert">
-              <span>{problem.text}</span>
-              {problem.action === 'key' ? (
-                <button className="pill-btn" onClick={forgetKey}>
-                  Change key
-                </button>
-              ) : (
-                <button className="pill-btn" onClick={() => void start()}>
-                  Reconnect
-                </button>
-              )}
-            </div>
-          )}
-
-          <div className="dock">
-            {typing ? (
-              <form onSubmit={submitText} className="type">
-                <label htmlFor="say" className="sr-only">
-                  Type instead of talking
-                </label>
-                <input id="say" autoFocus value={text} onChange={(e) => setText(e.target.value)} placeholder={connected ? 'Type to Squarely…' : 'e.g. knight f3, undo'} enterKeyHint="send" />
-                <button type="submit" className="send" aria-label="Send">
-                  <SendIcon />
-                </button>
-                <button type="button" className="icon-btn" aria-label="Back to voice" onClick={() => setTyping(false)}>
-                  <MicIcon />
-                </button>
-              </form>
-            ) : (
-              <>
-                <button className="icon-btn big" aria-label="Type instead" onClick={() => setTyping(true)}>
-                  <KeyboardIcon />
-                </button>
-                <div className="mic-wrap">
-                  <button
-                    className={`mic ${micOn || earsOn ? 'on' : ''} ${speaking ? 'speaking' : ''} ${liveState === 'connecting' ? 'connecting' : ''}`}
-                    onClick={hasKey ? toggleMic : earsSupported ? toggleEars : () => setTyping(true)}
-                    disabled={liveState === 'connecting'}
-                    aria-pressed={micOn || earsOn}
-                    aria-label={micOn || earsOn ? 'Stop listening' : 'Talk to Squarely'}
-                    style={{ ['--lvl' as string]: String(Math.min(1, level * 5)) }}
-                  >
-                    <Avatar mood={mood} level={outLevel} size={84} />
-                    {(micOn || earsOn) && (
-                      <span className="rec" aria-hidden>
-                        <MicIcon />
-                      </span>
-                    )}
-                  </button>
-                  <span className="mic-label">{micLabel}</span>
-                </div>
-                <button className="icon-btn big" aria-label="Coach, agent trace and Scout" onClick={() => (phone ? setSheetOpen(true) : setTab('agent'))}>
-                  <MoreIcon />
-                </button>
-              </>
-            )}
-          </div>
-          <div className="live-state" aria-hidden>
-            {hasKey
-              ? `${LIVE_MODEL} · ${liveState}`
-              : localTts.state === 'loading'
-                ? `Downloading local voice (Kokoro) · ${localTts.pct}%`
-                : localTts.state === 'ready'
-                  ? 'Local voice: Kokoro-82M, in your browser'
-                  : 'Local voice: system'}
+          {phone && now}
+          {phone && dock}
+          <div className="live-state sr-only" aria-hidden>
+            {hasKey ? `${LIVE_MODEL} · ${liveState}` : localTts.state === 'loading' ? `Downloading local voice · ${localTts.pct}%` : 'Local voice'}
           </div>
         </section>
 
         <aside
           className={`side ${phone ? 'sheet' : ''} ${phone && sheetOpen ? 'open' : ''}`}
-          aria-label="Coach, agent and settings"
+          aria-label="Conversation and agent steps"
           aria-hidden={phone && !sheetOpen ? true : undefined}
           inert={phone && !sheetOpen}
           onKeyDown={(e) => phone && e.key === 'Escape' && setSheetOpen(false)}
@@ -566,160 +643,158 @@ export function App() {
               <span />
             </button>
           )}
-          <Segmented
-            label="Panel"
-            value={tab}
-            onChange={setTab}
-            options={[
-              { value: 'coach', label: 'Coach' },
-              { value: 'agent', label: 'Agent' },
-              { value: 'scout', label: 'Scout' },
-              { value: 'settings', label: 'Settings' },
-            ]}
-          />
-          <div className="side-body">
-            {tab === 'coach' && (
-              <>
-                <Transcript lines={s.transcript} />
-                <div className="chips" aria-label="Quick questions">
-                  {QUICK.map((q) => (
-                    <button key={q} className="chip" onClick={() => void say(q)}>
-                      {q}
-                    </button>
-                  ))}
-                </div>
-                <Group>
-                  <button className="row action" onClick={() => void game.newGame()}>
-                    New game
-                  </button>
-                  <button className="row action" onClick={() => void game.newGame(s.kidColor === 'w' ? 'black' : 'white')}>
-                    Play as {s.kidColor === 'w' ? 'black' : 'white'}
-                  </button>
-                  <button className="row action" onClick={() => game.showPanel('parent_summary')}>
-                    Parent summary
-                  </button>
-                </Group>
-              </>
-            )}
-            {tab === 'agent' && (
-              <>
-                <p className="caption">Every tool call, live. The voice model decides what to do; chess.js and Stockfish compute every fact it says.</p>
-                <TracePanel trace={s.trace} />
-              </>
-            )}
-            {tab === 'scout' && (
-              <ScoutCard
-                report={s.scoutReport}
-                scouting={s.scouting}
-                progress={s.scoutProgress}
-                saved={s.profile.scout}
-                onScout={(username) => void say(`My chess.com username is ${username}`)}
-              />
-            )}
-            {tab === 'settings' && (
-              <>
-                <Group title="Player" footer="Kids mode uses friendly piece names and characters. Off: standard chess terms and notation.">
-                  <SwitchRow label="Kids mode" checked={s.kidsMode} onChange={setKids} />
-                  <div className="row">
-                    <span className="row-text">Squarely's level</span>
-                    <Segmented
-                      label="Level"
-                      value={s.level}
-                      onChange={(v) => game.changeSettings({ level: v })}
-                      options={[1, 2, 3, 4, 5].map((l) => ({ value: l, label: String(l), aria: `Level ${l}` }))}
-                    />
-                  </div>
-                </Group>
-                <Group title="Language" footer="Squarely sticks to one language. To switch, pick it here or ask out loud: “can you speak Swedish?”">
-                  <label className="row">
-                    <span className="row-text">Speak</span>
-                    <select
-                      className="ios-select"
-                      value={s.settings.language}
-                      onChange={(e) => {
-                        game.changeSettings({ language: e.target.value })
-                        if (connected) voice.current!.sendEvent(languageNote(e.target.value))
-                        voice.current?.updateInstruction(systemInstruction(game.profile, game.level, game.kidsMode, e.target.value))
-                      }}
-                    >
-                      {LANGUAGES.map((l) => (
-                        <option key={l} value={l}>
-                          {l}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </Group>
-                <Group title="Board" footer='Or just say it: "make the board blue", "animal pieces".'>
-                  <div className="row swatches" role="radiogroup" aria-label="Board colours">
-                    {(Object.keys(BOARD_THEMES) as BoardTheme[]).map((k) => (
-                      <button
-                        key={k}
-                        role="radio"
-                        aria-checked={s.settings.boardTheme === k}
-                        aria-label={BOARD_THEMES[k].label}
-                        title={BOARD_THEMES[k].label}
-                        className={`swatch ${s.settings.boardTheme === k ? 'on' : ''}`}
-                        style={{ background: `linear-gradient(135deg, ${BOARD_THEMES[k].light} 50%, ${BOARD_THEMES[k].dark} 50%)` }}
-                        onClick={() => game.changeSettings({ board_theme: k })}
-                      />
-                    ))}
-                  </div>
-                  <div className="row">
-                    <Segmented
-                      label="Pieces"
-                      value={s.settings.pieceStyle}
-                      onChange={(v: PieceStyle) => game.changeSettings({ piece_style: v })}
-                      options={(Object.keys(PIECE_STYLES) as PieceStyle[]).map((k) => ({ value: k, label: PIECE_STYLES[k].split(' (')[0] }))}
-                    />
-                  </div>
-                </Group>
-                <Group title="Memory" footer="condense.chat compresses past conversations and the Scout's game log before Gemini reads them.">
-                  <div className="row">
-                    <span className="row-text">
-                      <span>Tokens saved by condense</span>
-                      <small>
-                        {s.profile.condense.calls
-                          ? `${(s.profile.condense.before - s.profile.condense.after).toLocaleString()} of ${s.profile.condense.before.toLocaleString()} (−${Math.round((1 - s.profile.condense.after / s.profile.condense.before) * 100)}%) over ${s.profile.condense.calls} compressions`
-                          : 'Nothing compressed yet'}
-                      </small>
-                    </span>
-                  </div>
-                  <div className="row">
-                    <span className="row-text">
-                      <span>Remembers from last time</span>
-                      <small>{s.profile.sessionMemory ? `${s.profile.sessionMemory.slice(0, 90)}…` : 'Nothing yet'}</small>
-                    </span>
-                  </div>
-                </Group>
-                <Group title="Privacy" footer="Your key goes straight from this browser to Google. Your games and progress stay on this device.">
-                  <button className="row action" onClick={forgetKey}>
-                    {hasKey ? 'Change Gemini key' : 'Add a Gemini key'}
-                  </button>
-                  <button
-                    className="row action danger"
-                    onClick={() => {
-                      if (!armForget) {
-                        setArmForget(true)
-                        setTimeout(() => setArmForget(false), 4000)
-                        return
-                      }
-                      game.forgetMe(true)
-                      location.reload()
-                    }}
-                  >
-                    {armForget ? 'Tap again to erase name, games and progress' : 'Forget me'}
-                  </button>
-                </Group>
-                <p className="caption center">
-                  Voice: {LIVE_MODEL} · Scout plan: {BRAIN_MODEL} · Engine: Stockfish 19
-                </p>
-              </>
-            )}
-          </div>
+          {!phone && (
+            <div className="coach-top">
+              {talk}
+              {now}
+            </div>
+          )}
+          {side}
+          {!phone && composer}
         </aside>
         {phone && sheetOpen && <div className="scrim" onClick={() => setSheetOpen(false)} aria-hidden />}
       </main>
+
+      {youOpen && (
+        <Modal title="You" variant="sheet" onClose={() => setYouOpen(false)}>
+          <div className="sheet-head">
+            <span />
+            <h2>{s.profile.name ?? 'You'}</h2>
+            <button className="link-btn strong" onClick={() => setYouOpen(false)}>
+              Done
+            </button>
+          </div>
+          <div className="you-stats">
+            <div>
+              <b>{s.profile.gamesPlayed}</b>
+              <span>games</span>
+            </div>
+            <div>
+              <b>{s.profile.wins}</b>
+              <span>wins</span>
+            </div>
+            <div>
+              <b>{s.profile.puzzles.solved}</b>
+              <span>puzzles</span>
+            </div>
+          </div>
+
+          <Group title="Game">
+            <button className="row action" onClick={() => (setYouOpen(false), void act('new_game', {}, 'New game'))}>
+              New game
+            </button>
+            <button className="row action" onClick={() => (setYouOpen(false), void act('new_game', { color: s.kidColor === 'w' ? 'black' : 'white' }, 'Switch colours'))}>
+              New game as {s.kidColor === 'w' ? 'black' : 'white'}
+            </button>
+            <div className="row">
+              <span className="row-text">Squarely's level</span>
+              <Segmented
+                label="Level"
+                value={s.level}
+                onChange={(v) => game.changeSettings({ level: v })}
+                options={[1, 2, 3, 4, 5].map((l) => ({ value: l, label: String(l), aria: `Level ${l}` }))}
+              />
+            </div>
+            <button className="row action" onClick={() => (setYouOpen(false), game.showPanel('parent_summary'))}>
+              Summary for grown-ups
+            </button>
+          </Group>
+
+          <ScoutCard report={s.scoutReport} scouting={s.scouting} progress={s.scoutProgress} saved={s.profile.scout} onScout={(username) => void say(`My chess.com username is ${username}`)} />
+
+          <Group title="Look" footer='Or just say it: "make the board blue", "animal pieces".'>
+            <div className="row swatches" role="radiogroup" aria-label="Board colours">
+              {(Object.keys(BOARD_THEMES) as BoardTheme[]).map((k) => (
+                <button
+                  key={k}
+                  role="radio"
+                  aria-checked={s.settings.boardTheme === k}
+                  aria-label={BOARD_THEMES[k].label}
+                  title={BOARD_THEMES[k].label}
+                  className={`swatch ${s.settings.boardTheme === k ? 'on' : ''}`}
+                  style={{ background: `linear-gradient(135deg, ${BOARD_THEMES[k].light} 50%, ${BOARD_THEMES[k].dark} 50%)` }}
+                  onClick={() => game.changeSettings({ board_theme: k })}
+                />
+              ))}
+            </div>
+            <div className="row">
+              <Segmented
+                label="Pieces"
+                value={s.settings.pieceStyle}
+                onChange={(v: PieceStyle) => game.changeSettings({ piece_style: v })}
+                options={(Object.keys(PIECE_STYLES) as PieceStyle[]).map((k) => ({ value: k, label: PIECE_STYLES[k].split(' (')[0] }))}
+              />
+            </div>
+          </Group>
+
+          <Group title="Voice" footer="Kids mode uses friendly piece names and characters. Squarely sticks to one language; ask out loud to switch.">
+            <SwitchRow label="Kids mode" checked={s.kidsMode} onChange={setKids} />
+            <label className="row">
+              <span className="row-text">Language</span>
+              <select
+                className="ios-select"
+                value={s.settings.language}
+                onChange={(e) => {
+                  game.changeSettings({ language: e.target.value })
+                  if (connected) voice.current!.sendEvent(languageNote(e.target.value))
+                  voice.current?.updateInstruction(systemInstruction(game.profile, game.level, game.kidsMode, e.target.value))
+                }}
+              >
+                {LANGUAGES.map((l) => (
+                  <option key={l} value={l}>
+                    {l}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button className="row action" onClick={() => (setYouOpen(false), game.showPanel('help'))}>
+              What can I say?
+            </button>
+          </Group>
+
+          <Group title="Memory" footer="condense.chat compresses past conversations and the Scout's game log before Gemini reads them.">
+            <div className="row">
+              <span className="row-text">
+                <span>Remembers from last time</span>
+                <small>{s.profile.sessionMemory ? `${s.profile.sessionMemory.slice(0, 90)}…` : 'Nothing yet'}</small>
+              </span>
+            </div>
+            <div className="row">
+              <span className="row-text">
+                <span>Tokens saved by condense</span>
+                <small>
+                  {s.profile.condense.calls
+                    ? `${(s.profile.condense.before - s.profile.condense.after).toLocaleString()} of ${s.profile.condense.before.toLocaleString()} (−${Math.round((1 - s.profile.condense.after / s.profile.condense.before) * 100)}%)`
+                    : 'Nothing compressed yet'}
+                </small>
+              </span>
+            </div>
+          </Group>
+
+          <Group title="Privacy" footer="Your key goes straight from this browser to Google. Games and progress stay on this device.">
+            <button className="row action" onClick={() => (setYouOpen(false), forgetKey())}>
+              {hasKey ? 'Change Gemini key' : 'Add a Gemini key'}
+            </button>
+            <button
+              className="row action danger"
+              onClick={() => {
+                if (!armForget) {
+                  setArmForget(true)
+                  setTimeout(() => setArmForget(false), 4000)
+                  return
+                }
+                game.forgetMe(true)
+                location.reload()
+              }}
+            >
+              {armForget ? 'Tap again to erase name, games and progress' : 'Forget me'}
+            </button>
+          </Group>
+          <p className="caption center">
+            {hasKey ? `Voice: ${LIVE_MODEL} · ${liveState}` : localTts.state === 'ready' ? 'Voice: Kokoro-82M in your browser' : 'Voice: on this device'} · Scout plan: {BRAIN_MODEL} · Engine: Stockfish 19 · Puzzles: Lichess
+          </p>
+        </Modal>
+      )}
 
       <div className="sr-only" aria-live="polite" aria-atomic="true">
         {s.announce}
@@ -855,12 +930,21 @@ function Confetti() {
   )
 }
 
-// The puzzle on the board: goal, progress, and the hint ladder as buttons (same words work by voice).
-function PuzzleBar({ pz, say }: { pz: PuzzleView; say: (t: string) => void }) {
+// The puzzle under the board: which kind (a menu to switch), how far along, the goal, and its source.
+function PuzzleLine({ pz, onTheme }: { pz: PuzzleView; onTheme: (t: PuzzleTheme) => void }) {
   return (
-    <section className={`puzzle-bar ${pz.solved ? 'solved' : ''}`} aria-label="Puzzle">
+    <section className={`puzzle-line ${pz.solved ? 'solved' : ''}`} aria-label="Puzzle">
       <div className="pz-head">
-        <span className="pz-tag">{pz.label}</span>
+        <label className="pz-menu">
+          <span className="sr-only">Puzzle kind</span>
+          <select value={pz.theme} onChange={(e) => onTheme(e.target.value as PuzzleTheme)}>
+            {PUZZLE_THEMES.map((t) => (
+              <option key={t} value={t}>
+                {THEME_INFO[t].label}
+              </option>
+            ))}
+          </select>
+        </label>
         <span className="pz-steps" aria-label={`${pz.found} of ${pz.total} moves found`}>
           {Array.from({ length: pz.total }, (_, i) => (
             <i key={i} className={i < pz.found ? 'on' : ''} />
@@ -869,26 +953,6 @@ function PuzzleBar({ pz, say }: { pz: PuzzleView; say: (t: string) => void }) {
         <a className="pz-src" href={pz.url} target="_blank" rel="noreferrer">
           Lichess · {pz.rating}
         </a>
-      </div>
-      <p className="pz-goal">{pz.solved ? 'Solved! 🎉' : pz.goal}</p>
-      <div className="pz-actions">
-        {pz.solved ? (
-          <button className="primary" onClick={() => say('another puzzle')}>
-            Next puzzle
-          </button>
-        ) : (
-          <button className="primary" onClick={() => say('hint')}>
-            {['Hint', 'Which piece?', 'Show me'][pz.hintLevel] ?? 'Show me'}
-          </button>
-        )}
-        {!pz.solved && (
-          <button className="pill-btn ghost" onClick={() => say('another puzzle')}>
-            Skip
-          </button>
-        )}
-        <button className="pill-btn ghost" onClick={() => say('back to my game')}>
-          Back to game
-        </button>
       </div>
     </section>
   )

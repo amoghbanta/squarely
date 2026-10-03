@@ -56,3 +56,16 @@ export const StopIcon = (p: SVGProps<SVGSVGElement>) => (
     <rect x="6" y="6" width="12" height="12" rx="3" />
   </svg>
 )
+
+export const PersonIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <circle cx="12" cy="8" r="4" />
+    <path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6" />
+  </svg>
+)
+
+export const ChatIcon = (p: SVGProps<SVGSVGElement>) => (
+  <svg {...base(p)}>
+    <path d="M4 5h16v11H9l-5 4z" />
+  </svg>
+)

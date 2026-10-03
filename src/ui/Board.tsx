@@ -1,12 +1,51 @@
-// Big, bright SVG board. Pieces are characters with faces. Fully keyboard-playable (arrows + Enter).
+// Big, bright SVG board. Pieces are characters with faces. Tap, drag, or keyboard (arrows + Enter).
 import { Chess, type Color, type Square } from 'chess.js'
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
 import { CHARACTER } from '../chess/facts'
 
 import { ANIMAL, BOARD_THEMES, GLYPH, LETTER, type BoardTheme, type PieceStyle } from './themes'
 import type { Marks } from '../game/controller'
 import type { Grade } from '../chess/teach'
 import { GRADE } from './grades'
+
+type Piece = { type: string; color: Color }
+
+/** A piece's artwork in a 100×100 box: used on its square and as the piece you're dragging. */
+function PieceArt({ p, style }: { p: Piece; style: PieceStyle }) {
+  const t = p.type as keyof typeof GLYPH
+  return (
+    <>
+      {style === 'animals' ? (
+        <>
+          <circle cx="50" cy="50" r="40" className="disc" />
+          <text x="50" y="68" textAnchor="middle" className="emoji">
+            {ANIMAL[t]}
+          </text>
+        </>
+      ) : style === 'letters' ? (
+        <>
+          <circle cx="50" cy="50" r="40" className="disc" />
+          <text x="50" y="70" textAnchor="middle" className="letter">
+            {LETTER[t]}
+          </text>
+        </>
+      ) : (
+        <text x="50" y="80" textAnchor="middle" className="glyph">
+          {GLYPH[t]}
+        </text>
+      )}
+      {/* googly eyes */}
+      {style === 'friends' && (
+        <>
+          <circle cx="41" cy={t === 'p' ? 52 : 46} r="6.5" className="eye" />
+          <circle cx="59" cy={t === 'p' ? 52 : 46} r="6.5" className="eye" />
+          <circle cx="42.5" cy={t === 'p' ? 53 : 47} r="3" className="pupil" />
+          <circle cx="60.5" cy={t === 'p' ? 53 : 47} r="3" className="pupil" />
+        </>
+      )}
+    </>
+  )
+}
 
 const PLAIN: Record<string, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' }
 
@@ -53,8 +92,21 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
   const ref = useRef<SVGSVGElement>(null)
   const [focused, setFocused] = useState(false)
   const [hover, setHover] = useState<Square | null>(null)
-  // A new position (voice move, engine reply, undo) clears any half-made tap selection.
-  useEffect(() => setSelected(null), [fen])
+  // Pointer: a press that barely moves is a tap; one that travels is a drag.
+  const press = useRef<{ from: Square; x: number; y: number; id: number } | null>(null)
+  const [drag, setDragState] = useState<{ from: Square; x: number; y: number } | null>(null)
+  // Mirrored in a ref so fast pointer events (before React re-renders) see the live drag.
+  const dragRef = useRef(drag)
+  const setDrag = (d: typeof drag) => {
+    dragRef.current = d
+    setDragState(d)
+  }
+  // A new position (voice move, engine reply, undo) clears any half-made tap selection or drag.
+  useEffect(() => {
+    setSelected(null)
+    setDrag(null)
+    press.current = null
+  }, [fen])
 
   const targets = useMemo(
     () => (selected ? new Set(chess.moves({ square: selected, verbose: true }).map((m) => m.to)) : new Set<string>()),
@@ -72,6 +124,67 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
     } else {
       setSelected(null)
     }
+  }
+
+  /** Board coordinates (0..800 inside the frame) under the pointer, and the square there. */
+  const at = (e: PointerEvent) => {
+    const svg = ref.current!
+    const m = svg.getScreenCTM()
+    if (!m) return null
+    const pt = new DOMPoint(e.clientX, e.clientY).matrixTransform(m.inverse())
+    const col = Math.floor(pt.x / 100)
+    const row = Math.floor(pt.y / 100)
+    const sq = col >= 0 && col < 8 && row >= 0 && row < 8 ? sqAt(col, row, pov) : null
+    return { x: pt.x, y: pt.y, sq }
+  }
+
+  const onPointerDown = (e: PointerEvent<SVGSVGElement>) => {
+    if (e.button !== 0) return
+    const a = at(e)
+    if (!a?.sq) return
+    press.current = { from: a.sq, x: a.x, y: a.y, id: e.pointerId }
+    const p = chess.get(a.sq)
+    // Only your own pieces can be picked up; capture so the drag survives leaving the board.
+    if (!disabled && p && p.color === pov && chess.turn() === pov) {
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId)
+      } catch {
+        /* synthetic or already-released pointer: the drag still works inside the board */
+      }
+    }
+  }
+
+  const onPointerMove = (e: PointerEvent<SVGSVGElement>) => {
+    const a = at(e)
+    if (e.pointerType === 'mouse') setHover(a?.sq ?? null)
+    const pr = press.current
+    if (!pr || pr.id !== e.pointerId || !a) return
+    if (!dragRef.current) {
+      const p = chess.get(pr.from)
+      const travelled = Math.hypot(a.x - pr.x, a.y - pr.y) > 14
+      if (!travelled || disabled || !p || p.color !== pov || chess.turn() !== pov) return
+      setSelected(pr.from) // shows where it can go
+    }
+    setDrag({ from: pr.from, x: a.x, y: a.y })
+  }
+
+  const onPointerUp = (e: PointerEvent<SVGSVGElement>) => {
+    const pr = press.current
+    press.current = null
+    if (!pr || pr.id !== e.pointerId) return
+    const a = at(e)
+    const d = dragRef.current
+    if (d) {
+      setDrag(null)
+      const legal = a?.sq && a.sq !== d.from && chess.moves({ square: d.from, verbose: true }).some((m) => m.to === a.sq)
+      if (legal) {
+        onMove(d.from, a.sq!)
+        setSelected(null)
+      }
+      // Dropped elsewhere: the piece snaps back and stays selected, so a tap can still finish the move.
+      return
+    }
+    if (a?.sq === pr.from) activate(pr.from)
   }
 
   const onKey = (e: KeyboardEvent) => {
@@ -114,6 +227,13 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
         ['--frame' as string]: BOARD_THEMES[boardTheme].frame,
       }}
       onMouseLeave={() => setHover(null)}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={onPointerUp}
+      onPointerCancel={() => {
+        press.current = null
+        setDrag(null)
+      }}
     >
       {/* Frame with big file letters and rank numbers outside the squares, so they never hide behind a piece.
           The letter and number of the square you're pointing at light up: "this is e4". */}
@@ -144,7 +264,7 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
         const isLast = lastMove && (lastMove.from === sq || lastMove.to === sq)
         const isCursor = col === cursor[0] && row === cursor[1]
         return (
-          <g key={sq} transform={`translate(${col * 100} ${row * 100})`} onClick={() => activate(sq)} onMouseEnter={() => setHover(sq)} className="sq">
+          <g key={sq} transform={`translate(${col * 100} ${row * 100})`} className="sq">
             <rect width="100" height="100" className={dark ? 'dark' : 'light'} />
             {isLast && <rect width="100" height="100" className="last" />}
             {checkSquare === sq && <rect width="100" height="100" className="check" />}
@@ -153,38 +273,11 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
             {p && (
               <g
                 key={lastMove?.to === sq ? `${lastMove.from}${sq}${fen}` : 'still'}
-                className={`piece ${p.color === 'w' ? 'pw' : 'pb'} ${lastMove?.to === sq ? 'slide' : ''}`}
+                className={`piece ${p.color === 'w' ? 'pw' : 'pb'} ${lastMove?.to === sq ? 'slide' : ''} ${drag?.from === sq ? 'lifted' : ''}`}
                 style={lastMove?.to === sq ? slideFrom(lastMove.from, sq, pov) : undefined}
               >
                 <title>{`${p.color === pov ? 'Your' : "Buddy's"} ${kidsMode ? CHARACTER[p.type] : PLAIN[p.type]}`}</title>
-                {pieceStyle === 'animals' ? (
-                  <>
-                    <circle cx="50" cy="50" r="40" className="disc" />
-                    <text x="50" y="68" textAnchor="middle" className="emoji">
-                      {ANIMAL[p.type]}
-                    </text>
-                  </>
-                ) : pieceStyle === 'letters' ? (
-                  <>
-                    <circle cx="50" cy="50" r="40" className="disc" />
-                    <text x="50" y="70" textAnchor="middle" className="letter">
-                      {LETTER[p.type]}
-                    </text>
-                  </>
-                ) : (
-                  <text x="50" y="80" textAnchor="middle" className="glyph">
-                    {GLYPH[p.type]}
-                  </text>
-                )}
-                {/* googly eyes */}
-                {pieceStyle === 'friends' && (
-                  <>
-                    <circle cx="41" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
-                    <circle cx="59" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
-                    <circle cx="42.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
-                    <circle cx="60.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
-                  </>
-                )}
+                <PieceArt p={p} style={pieceStyle} />
               </g>
             )}
             {hover === sq && !p && <text x="50" y="60" className="sq-name">{sq}</text>}
@@ -247,6 +340,14 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
           )
         })()}
       </g>
+      {drag && (() => {
+        const p = chess.get(drag.from)
+        return p ? (
+          <g className={`piece dragging ${p.color === 'w' ? 'pw' : 'pb'}`} transform={`translate(${drag.x - 50} ${drag.y - 62})`} pointerEvents="none">
+            <PieceArt p={p} style={pieceStyle} />
+          </g>
+        ) : null
+      })()}
     </svg>
     {/* Screen readers don't reliably re-read a changing aria-label, so the cursor is announced here. */}
     <div className="sr-only" aria-live="polite">

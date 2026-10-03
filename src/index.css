@@ -77,7 +77,7 @@ a { color: var(--tint); }
 .app { min-height: 100dvh; }
 .topbar {
   position: sticky; top: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px;
   padding: calc(10px + env(safe-area-inset-top, 0px)) 20px 10px;
   background: var(--blur-bg); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
   border-bottom: 0.5px solid var(--separator);
@@ -117,7 +117,7 @@ a { color: var(--tint); }
 
 /* ---------- board ---------- */
 .board {
-  display: block; width: min(100%, 620px, calc(100dvh - 330px)); min-width: 260px; aspect-ratio: 1;
+  display: block; width: min(100%, 620px, calc(100dvh - 440px)); min-width: 300px; aspect-ratio: 1;
   border-radius: 22px; box-shadow: var(--shadow), inset 0 0 0 1px rgba(255,255,255,0.08); user-select: none; touch-action: manipulation; overflow: hidden;
 }
 .board .light { fill: var(--light-sq); }
@@ -484,19 +484,100 @@ a { color: var(--tint); }
 @media (max-height: 700px) { .modal { place-items: start center; padding: 16px; } .card { padding: 18px; gap: 10px; } }
 .over-card .primary { min-height: 50px; padding: 0 36px; font-size: 17px; }
 
-/* ---------- puzzle bar ---------- */
-.puzzle-bar {
-  width: min(100%, 620px); display: grid; gap: 8px; padding: 14px 16px; border-radius: 18px;
-  background: var(--surface); box-shadow: 0 1px 0 var(--separator), 0 8px 24px rgba(0, 0, 0, 0.06); animation: rise 0.22s ease;
+.pill-btn.ghost { background: var(--fill); color: var(--label); }
+
+/* ---------- drag and drop ---------- */
+.board { touch-action: none; -webkit-user-select: none; user-select: none; cursor: default; }
+.board .piece.lifted { opacity: 0.3; }
+.board .piece.dragging { filter: drop-shadow(0 10px 14px rgba(0, 0, 0, 0.35)); cursor: grabbing; }
+
+/* ---------- Apple-style shell: mode switch, profile, next-step row, sheets ---------- */
+.topbar > .seg { min-width: 220px; }
+.topbar .seg button { font-size: 15px; padding: 7px 18px; }
+.profile-btn {
+  justify-self: end; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%;
+  background: linear-gradient(160deg, #7d7aff, #5e5ce6); color: #fff; font: 700 18px var(--rounded); font-size: 18px;
+  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.3);
 }
-.puzzle-bar.solved { box-shadow: 0 0 0 2px #34c759, 0 8px 24px rgba(52, 199, 89, 0.25); }
-.pz-head { display: flex; align-items: center; gap: 10px; }
-.pz-tag { padding: 4px 10px; border-radius: 999px; background: var(--tint-soft); color: var(--tint); font-weight: 700; font-size: 14px; }
+.profile-btn:active { transform: scale(0.94); }
+.icon-btn.placeholder { visibility: hidden; }
+
+.actions { width: min(100%, 620px); display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; min-height: 48px; }
+.act {
+  min-height: 44px; padding: 0 18px; border-radius: 999px; font-size: 15px; font-weight: 600;
+  background: var(--fill); color: var(--label); transition: transform 0.12s ease;
+}
+.act.primary { background: var(--tint); color: #fff; padding: 0 24px; }
+.act:active { transform: scale(0.97); }
+.act:disabled { opacity: 0.45; }
+
+.puzzle-line { width: min(100%, 620px); display: grid; gap: 6px; animation: rise 0.22s ease; }
+.puzzle-line .pz-head { display: flex; align-items: center; gap: 10px; }
+.pz-menu select {
+  appearance: none; -webkit-appearance: none; border: 0; cursor: pointer;
+  padding: 6px 28px 6px 12px; border-radius: 999px; background: var(--tint-soft); color: var(--tint);
+  font: 700 14px var(--rounded);
+  background-image: linear-gradient(45deg, transparent 50%, currentColor 50%), linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-position: calc(100% - 15px) 55%, calc(100% - 10px) 55%; background-size: 5px 5px; background-repeat: no-repeat;
+}
+.puzzle-line.solved .pz-goal { color: #248a3d; }
+
+.sheet-card { max-width: 520px; max-height: min(88dvh, 860px); padding: 0 18px 22px; gap: 18px; align-content: start; }
+.sheet-head {
+  position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 16px 0 8px; background: var(--surface);
+}
+.sheet-head h2 { font-size: 20px; }
+.link-btn.strong { justify-self: end; font-weight: 700; }
+.you-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.you-stats div { display: grid; justify-items: center; padding: 12px 6px; border-radius: 14px; background: var(--surface-2); }
+.you-stats b { font: 700 26px var(--rounded); }
+.you-stats span { font-size: 13px; color: var(--label-2); }
+.sheet-card .group { margin: 0; }
+
+@media (max-width: 899px) {
+  .topbar { grid-template-columns: auto 1fr auto; }
+  .topbar > .seg { min-width: 0; justify-self: center; }
+  .sheet-modal { place-items: end stretch; padding: 0; }
+  .sheet-card { max-width: none; max-height: 92dvh; border-radius: 22px 22px 0 0; padding-bottom: calc(22px + env(safe-area-inset-bottom, 0px)); animation: sheet-up 0.32s cubic-bezier(0.2, 0.9, 0.2, 1); }
+}
+@keyframes sheet-up { from { transform: translateY(100%); } }
+@media (prefers-reduced-motion: reduce) { .sheet-card { animation: none; } }
+.scout .group-title { margin: 0 0 0 14px; font-size: 13px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; color: var(--label-2); }
+@media (max-width: 899px) {
+  .actions { flex-wrap: nowrap; overflow-x: auto; justify-content: flex-start; scrollbar-width: none; padding: 0 2px; }
+  .actions::-webkit-scrollbar { display: none; }
+  .act { flex: none; padding: 0 14px; font-size: 14px; }
+  .actions:has(.act:nth-child(-n + 3):last-child) { justify-content: center; }
+}
 .pz-steps { display: flex; gap: 5px; }
 .pz-steps i { width: 10px; height: 10px; border-radius: 50%; background: var(--fill-strong); transition: background 0.3s; }
 .pz-steps i.on { background: #34c759; }
-.pz-src { margin-left: auto; font-size: 12px; color: var(--label-3); text-decoration: none; }
-.pz-goal { margin: 0; font: 600 19px/1.3 var(--rounded); color: var(--label); }
-.pz-actions { display: flex; gap: 8px; flex-wrap: wrap; }
-.pz-actions .primary { min-height: 44px; padding: 0 20px; }
-.pill-btn.ghost { background: var(--fill); color: var(--label); }
+.pz-src { margin-left: auto; font-size: 13px; color: var(--label-3); text-decoration: none; }
+.pz-goal { margin: 0; font-size: 15px; color: var(--label-2); }
+.pz-menu select { width: auto; }
+
+/* ---------- one screen, no scrolling (desktop) ----------
+   Left: the board, as big as the window allows. Right: the coach panel — Squarely's face (the talk
+   button), what it just said, the next steps, then the history and a type box. */
+.now { width: min(100%, 620px); display: grid; justify-items: center; gap: 12px; }
+.now .captions, .now .actions, .now .options, .now .problem { width: 100%; }
+@media (min-width: 900px) {
+  .app { height: 100dvh; display: grid; grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+  .layout { height: 100%; min-height: 0; width: 100%; max-width: 1440px; padding: 16px 24px; grid-template-columns: minmax(0, 1fr) 420px; align-items: stretch; }
+  .stage { min-height: 0; justify-content: center; gap: 10px; }
+  .board { width: min(100%, calc(100dvh - 190px)); max-width: 860px; min-width: 320px; }
+  .side { position: static; height: 100%; padding: 16px; gap: 12px; }
+  .coach-top { display: grid; justify-items: center; gap: 12px; padding: 4px 0 14px; border-bottom: 0.5px solid var(--separator); }
+  .coach-top .mic { width: 88px; height: 88px; }
+  .coach-top .captions { min-height: 0; }
+  .coach-top .cap-buddy { font-size: 18px; }
+  .coach-top .actions { min-height: 0; }
+  .side > .type { flex: none; }
+}
+
+/* The strip under the board is exactly as wide as the board. */
+:root { --board-w: min(100%, 620px, calc(100dvh - 440px)); }
+@media (min-width: 900px) { :root { --board-w: min(100%, calc(100dvh - 190px), 860px); } }
+@media (max-width: 899px) { :root { --board-w: 100%; } }
+.puzzle-line, .move-strip { width: var(--board-w); max-width: var(--board-w); }
