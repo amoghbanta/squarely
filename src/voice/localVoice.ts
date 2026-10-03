@@ -16,6 +16,10 @@ try {
   /* no TTS */
 }
 
+// Live Kokoro speech is off for now: its streaming dropped the last sentence and then replayed.
+// The system voice speaks instead; the pre-rendered welcome clip still plays.
+const KOKORO_LIVE = false
+
 class LocalVoice {
   status: Status = { state: 'off', pct: 0 }
   voice = 'am_puck' // Kokoro's Puck, matching the Gemini Live voice
@@ -31,7 +35,7 @@ class LocalVoice {
   warm() {
     this.ctx ??= new AudioContext()
     void this.ctx.resume()
-    if (this.worker) return
+    if (this.worker || !KOKORO_LIVE) return
     this.set({ state: 'loading', pct: 0 })
     this.worker = new Worker(new URL('./kokoro.worker.ts', import.meta.url), { type: 'module' })
     this.worker.onmessage = (e) => {

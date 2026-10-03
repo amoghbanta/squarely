@@ -15,6 +15,8 @@ import {
 } from '@google/genai'
 
 export const LIVE_MODEL = 'gemini-3.8-live'
+/** Mic peak (0–1) that counts as the player talking over Squarely; speaker echo stays well below it. */
+const BARGE_IN_PEAK = 0.15
 
 /** Tools declared NON_BLOCKING: the model keeps talking while they run. */
 export const ASYNC_TOOLS = new Set(['scout_games'])
@@ -278,6 +280,7 @@ export class LiveVoice {
   }
 
   private micEpoch = 0
+  private bargeUntil = 0
 
   private async openMic() {
     // stopMic() during the permission prompt bumps micEpoch; then this start gives up and cleans up.
@@ -299,6 +302,14 @@ export class LiveVoice {
     this.micNode = new AudioWorkletNode(this.micCtx, 'mic-capture')
     this.micNode.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
       this.handlers.onLevel?.(e.data.level)
+      // While Squarely talks, its own voice leaks from the speakers into the mic and counts as an
+      // interruption, so it stops and says the sentence again. Pass only clearly louder sound (a
+      // real barge-in), then keep the mic open briefly so the whole interruption gets through.
+      if (this.sources.size) {
+        const now = performance.now()
+        if (e.data.level >= BARGE_IN_PEAK) this.bargeUntil = now + 1500
+        else if (now > this.bargeUntil) return
+      }
       this.session?.sendRealtimeInput({ audio: { data: b64FromBuffer(e.data.pcm), mimeType: 'audio/pcm;rate=16000' } })
     }
     srcNode.connect(this.micNode)
