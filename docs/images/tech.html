@@ -15,7 +15,7 @@
   body {
     width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--label); font: 20px/1.35 var(--font);
     background-image: radial-gradient(900px 500px at 50% 30%, rgba(125,122,255,0.16), transparent 70%), radial-gradient(700px 400px at 90% 100%, rgba(48,209,88,0.07), transparent 70%);
-    padding: 36px 64px 32px; display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 18px;
+    padding: 28px 64px 24px; display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 13px;
   }
   h1 { font: 800 50px/1 var(--rounded); letter-spacing: -0.02em; }
   h1 small { font: 500 24px var(--font); color: var(--label-2); margin-left: 18px; letter-spacing: 0; }
@@ -45,18 +45,21 @@
   .role::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--c); }
   .role h3 { font: 700 21px var(--rounded); display: flex; align-items: center; gap: 8px; }
   .role h3 span { font-size: 22px; }
-  .role p { color: var(--label-2); font-size: 16px; margin-top: 4px; }
+  .role p { color: var(--label-2); font-size: 15px; margin-top: 4px; }
   .role .src { display: inline-block; margin-top: 8px; font: 600 13px var(--font); color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); padding: 3px 9px; border-radius: 999px; }
+  .role .tools { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .role .tools code { font: 500 13px/1 ui-monospace, 'SF Mono', Menlo, monospace; color: rgba(255,255,255,0.86); background: var(--card-2); border: 1px solid var(--line); padding: 4px 7px; border-radius: 7px; }
+  .role .tools code.bg { border-color: rgba(255,159,10,0.6); color: var(--orange); }
   .role.scout { grid-column: span 3; border-color: rgba(255,159,10,0.4); }
   .role.scout .tag { position: absolute; top: 14px; right: 16px; font: 700 12px var(--font); letter-spacing: 0.1em; text-transform: uppercase; color: var(--orange); }
 
   /* truth band */
-  .truth { display: flex; align-items: center; gap: 18px; padding: 16px 24px; border-radius: 20px; background: rgba(48,209,88,0.1); border: 1px solid rgba(48,209,88,0.35); font-size: 20px; }
+  .truth { display: flex; align-items: center; gap: 18px; padding: 11px 24px; border-radius: 20px; background: rgba(48,209,88,0.1); border: 1px solid rgba(48,209,88,0.35); font-size: 20px; }
   .truth b { font: 800 22px var(--rounded); color: var(--green); white-space: nowrap; }
   .truth .rc { margin-left: auto; white-space: nowrap; font: 600 15px var(--font); color: var(--green); background: rgba(48,209,88,0.16); padding: 6px 12px; border-radius: 999px; }
 
   /* details */
-  .details h4 { font: 700 15px var(--font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--label-3); margin-bottom: 12px; }
+  .details h4 { font: 700 15px var(--font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--label-3); margin-bottom: 9px; }
   .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   .d { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; display: flex; gap: 12px; align-items: flex-start; }
   .d i { font-style: normal; font-size: 22px; line-height: 1.1; }
@@ -106,13 +109,13 @@
     </div>
     <div class="arrow"><span>⇄<br />tools</span></div>
     <div class="roles">
-      <div class="role" style="--c: var(--teal)"><h3><span>⚖️</span>Referee</h3><p>Legal moves, misheard-move repair, "move it there"</p><span class="src">chess.js</span></div>
-      <div class="role" style="--c: var(--gem)"><h3><span>🧠</span>Tutor</h3><p>Threats, best move arrows, move grades</p><span class="src">Stockfish 19 · WASM</span></div>
-      <div class="role" style="--c: var(--tint)"><h3><span>♟️</span>Opponent</h3><p>Plays at your level, adapts as you improve</p><span class="src">Stockfish 19 · WASM</span></div>
-      <div class="role" style="--c: var(--pink)"><h3><span>🎓</span>Teacher</h3><p>6 piece lessons, 280 puzzles, hint ladders</p><span class="src">Lichess CC0 · curated book</span></div>
-      <div class="role" style="--c: var(--green)"><h3><span>💾</span>Memory</h3><p>Profile, saved games, weak spots, notes from past chats</p><span class="src">Browser localStorage · on device</span></div>
-      <div class="role" style="--c: #a2a2b5"><h3><span>🗣️</span>Offline voice</h3><p>Speaks with no key and no server</p><span class="src">Kokoro-82M in browser</span></div>
-      <div class="role scout" style="--c: var(--orange)"><span class="tag">2nd agent · background</span><h3><span>🔭</span>Scout</h3><p>Pulls your real chess.com games, checks every move with Stockfish, then writes a practice plan</p><span class="src">chess.com API · Stockfish · Gemini 3.8 Flash via condense.chat proxy</span></div>
+      <div class="role" style="--c: var(--teal)"><h3><span>⚖️</span>Referee</h3><p>Legal moves, misheard-move repair, "move it there"</p><span class="src">chess.js</span><div class="tools"><code>make_move</code><code>undo</code><code>new_game</code><code>describe_board</code></div></div>
+      <div class="role" style="--c: var(--gem)"><h3><span>🧠</span>Tutor</h3><p>Threats, best move arrows, move grades</p><span class="src">Stockfish 19 · WASM</span><div class="tools"><code>analyse_position</code><code>suggest_move</code><code>review_move</code><code>chess_knowledge</code></div></div>
+      <div class="role" style="--c: var(--tint)"><h3><span>♟️</span>Opponent</h3><p>Plays at your level, adapts as you improve</p><span class="src">Stockfish 19 · WASM</span><div class="tools"><code>engine_reply</code><code>set_level</code></div></div>
+      <div class="role" style="--c: var(--pink)"><h3><span>🎓</span>Teacher</h3><p>6 piece lessons, 280 puzzles, hint ladders</p><span class="src">Lichess CC0 · curated book</span><div class="tools"><code>start_lesson</code><code>explain_piece</code><code>stop_lesson</code><code>start_puzzle</code><code>puzzle_hint</code><code>stop_puzzle</code></div></div>
+      <div class="role" style="--c: var(--green)"><h3><span>💾</span>Memory</h3><p>Profile, saved games, weak spots, notes from past chats</p><span class="src">Browser localStorage · on device</span><div class="tools"><code>remember</code><code>game_summary</code><code>forget_me</code><code>pause_game</code><code>resume_game</code><code>open_game</code><code>review_step</code><code>stop_review</code></div></div>
+      <div class="role" style="--c: #a2a2b5"><h3><span>🎛️</span>App control</h3><p>Looks, language, talk style, screens, the mic</p><span class="src">React UI</span><div class="tools"><code>change_settings</code><code>show_screen</code><code>stop_listening</code></div></div>
+      <div class="role scout" style="--c: var(--orange)"><span class="tag">2nd agent · background</span><h3><span>🔭</span>Scout</h3><p>Pulls your real chess.com games, checks every move with Stockfish, then writes a practice plan</p><span class="src">chess.com API · Stockfish · Gemini 3.8 Flash via condense.chat proxy</span> <div class="tools" style="display:inline-flex;margin-left:8px"><code class="bg">scout_games · NON_BLOCKING</code></div></div>
     </div>
   </section>
 
@@ -130,13 +133,9 @@
       <div class="d"><i>🧷</i><div><b>"Move it to f3"</b><small>Remembers which piece you were just talking about</small></div></div>
       <div class="d"><i>🤔</i><div><b>Blunder → a question</b><small>Pauses and asks before it tells; undo is one word</small></div></div>
       <div class="d"><i>🧩</i><div><b>Hints never leak</b><small>Idea → which piece → the move, from the real solution</small></div></div>
-      <div class="d"><i>👁️</i><div><b>Never guesses the board</b><small>Won't name a square it hasn't checked</small></div></div>
-      <div class="d"><i>⏸️</i><div><b>Pause, save, review</b><small>Autosaved games, replay with grades and better moves</small></div></div>
       <div class="d"><i>🧒</i><div><b>Kids mode, never announced</b><small>Simpler words and animal pieces, no label</small></div></div>
-      <div class="d"><i>💬</i><div><b>Talk styles</b><small>To the point, balanced or chatty, switched by voice</small></div></div>
+      <div class="d"><i>🗣️</i><div><b>No key? Still talks</b><small>Kokoro-82M voice runs in the browser, no server</small></div></div>
       <div class="d"><i>♿</i><div><b>Accessible by default</b><small>Live screen-reader announcements, big letters, keyboard</small></div></div>
-      <div class="d"><i>👋</i><div><b>Spoken first-run tour</b><small>A spotlight follows Squarely's words around the screen</small></div></div>
-      <div class="d"><i>🧪</i><div><b>Tested like a product</b><small>Browser e2e suites plus real Gemini Live voice runs</small></div></div>
     </div>
   </section>
 
