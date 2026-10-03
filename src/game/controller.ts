@@ -1368,7 +1368,9 @@ export class GameController {
       can_go_now: moves.slice(0, 8).map((m) => ({ to: m.to, where: whereIs(m.to, this.kidColor), takes: m.captured ? nameOf(m.captured) : undefined })),
       more_moves: moves.length > 8 ? moves.length - 8 : undefined,
       shown_on_board: moves.length ? 'its moves are drawn on the board' : 'it has no moves right now',
-      instruction: 'Explain how_it_moves simply, then point at the board. Do not list squares unless asked.',
+      instruction: mine.length
+        ? 'Explain how_it_moves simply, then point at the board. Do not list squares unless asked.'
+        : `Explain how_it_moves simply. There is no ${nameOf(sym)} of theirs on this board, so offer to try it in its own lesson (start_lesson ${STD_NAME[sym]}).`,
     }
   }
 
