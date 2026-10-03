@@ -29,7 +29,7 @@ export type ScoutReport = {
 
 type Step = (title: string, detail?: unknown) => void
 
-const MAX_GAMES = 8
+const MAX_GAMES = 15
 const MAX_PLIES = 80
 
 async function fetchChessCom(username: string, step: Step): Promise<RawGame[]> {
@@ -103,7 +103,7 @@ export async function runScout(source: ScoutSource, apiKey: string | null, step:
     const fens = [history[0]?.before ?? new Chess().fen(), ...history.map((m) => m.after)]
     const evals: { kidCp: number; best?: EngineLine }[] = []
     for (const fen of fens) {
-      const r = await engine.analyse(fen, { depth: 8 })
+      const r = await engine.analyse(fen, { depth: 10 })
       const stm = fen.split(' ')[1] as Color
       const cp = r.lines[0]?.scoreCp ?? 0
       evals.push({ kidCp: stm === kid ? cp : -cp, best: r.lines[0] })
