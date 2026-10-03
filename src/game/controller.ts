@@ -145,6 +145,8 @@ export class GameController {
   private lastHintAtKidMove = -99
   private hintOpen = false // tutor intervened and is waiting for the kid to retry
   private gameRecorded = false
+  private lineSeq = 0 // transcript lines ever added (the array itself is capped)
+  private profileEpoch = 0 // bumped by forgetMe so in-flight writers drop stale results
   private evalCache = new Map<string, number>()
   private listeners = new Set<() => void>()
   private snap: GameSnapshot
@@ -214,6 +216,7 @@ export class GameController {
       const sources = who === 'buddy' ? [...new Set(this.queuedSources.map((q) => q.tool))] : []
       if (who === 'buddy') this.queuedSources = []
       this.transcript = [...this.transcript.slice(-49), { who, text, sources }]
+      this.lineSeq++
     }
     this.emit()
   }
@@ -253,14 +256,16 @@ export class GameController {
   }
 
   private async kidEval(fen: string): Promise<number> {
-    const hit = this.evalCache.get(fen)
-    if (hit !== undefined) return hit
-    const res = await getEngine().analyse(fen, { depth: 10 })
+    // Cached as the side-to-move's score, so switching colours between games can't flip it.
     const stm = fen.split(' ')[1] as Color
-    const cp = res.lines[0]?.scoreCp ?? 0
-    const kid = stm === this.kidColor ? cp : -cp
-    this.evalCache.set(fen, kid)
-    return kid
+    let cp = this.evalCache.get(fen)
+    if (cp === undefined) {
+      const res = await getEngine().analyse(fen, { depth: 10 })
+      cp = res.lines[0]?.scoreCp ?? 0
+      if (this.evalCache.size > 500) this.evalCache.clear()
+      this.evalCache.set(fen, cp)
+    }
+    return stm === this.kidColor ? cp : -cp
   }
 
   private overReason(): string | null {
@@ -441,6 +446,8 @@ export class GameController {
       ? this.chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] ?? 'q' })
       : this.chess.move(this.chess.moves()[0])
     this.lastMove = { from: move.from, to: move.to }
+    // The kid chose to play on instead of retrying, so the hint is over (no praise for the next move).
+    this.hintOpen = false
     if (lines[pick]) this.gradePly(fenBefore, move.lan, winProb(bestCp), winProb(lines[pick].scoreCp))
     this.point([{ from: move.from, to: move.to, kind: 'move' }], [])
     const opp = this.describe(move)
@@ -453,7 +460,11 @@ export class GameController {
   }
 
   // ---------- Board awareness ----------
-  async analysePosition(): Promise<Record<string, unknown>> {
+  analysePosition() {
+    return this.exclusive(() => this.analysePositionInner())
+  }
+
+  private async analysePositionInner(): Promise<Record<string, unknown>> {
     const t0 = performance.now()
     const c = this.chess
     const threats = threatsAgainst(c, this.kidColor).map((t) => ({
@@ -494,7 +505,11 @@ export class GameController {
 
   // ---------- Teaching: show, don't just tell ----------
   /** Coach: the engine's best move, optionally for one piece only, with facts about why. Draws a green arrow. */
-  async suggestMove(pieceWord?: string): Promise<Record<string, unknown>> {
+  suggestMove(pieceWord?: string) {
+    return this.exclusive(() => this.suggestMoveInner(pieceWord))
+  }
+
+  private async suggestMoveInner(pieceWord?: string): Promise<Record<string, unknown>> {
     const t0 = performance.now()
     const c = this.chess
     if (this.overReason()) return { status: 'game_over' }
@@ -534,7 +549,11 @@ export class GameController {
   }
 
   /** Coach: how good was the kid's last move, and what was best there. Shows both as arrows. */
-  async reviewMove(): Promise<Record<string, unknown>> {
+  reviewMove() {
+    return this.exclusive(() => this.reviewMoveInner())
+  }
+
+  private async reviewMoveInner(): Promise<Record<string, unknown>> {
     const t0 = performance.now()
     const hist = this.chess.history({ verbose: true })
     const last = [...hist].reverse().find((m) => m.color === this.kidColor)
@@ -621,6 +640,7 @@ export class GameController {
     // Only undo if the player has a move to take back (never the buddy's opening move as black).
     if (!h.some((m) => m.color === this.kidColor)) return { status: 'nothing_to_undo' }
     const undone: string[] = []
+    if (this.gameRecorded) this.unrecordGame()
     if (h[h.length - 1].color !== this.kidColor) undone.push(this.chess.undo()!.san)
     const k = this.chess.undo()
     if (k) undone.push(k.san)
@@ -674,13 +694,34 @@ export class GameController {
     this.panel = 'summary'
   }
 
+  /** Taking back a finished game's last move means the result no longer stands. */
+  private unrecordGame() {
+    const over = this.overReason()
+    const p = { ...this.profile, gamesPlayed: Math.max(0, this.profile.gamesPlayed - 1) }
+    if (over === 'checkmate_kid_wins') p.wins = Math.max(0, p.wins - 1)
+    else if (over === 'checkmate_opponent_wins') p.losses = Math.max(0, p.losses - 1)
+    else if (over) p.draws = Math.max(0, p.draws - 1)
+    this.profile = p
+    saveProfile(p)
+    this.gameRecorded = false
+    if (this.panel === 'summary') this.panel = null
+    this.log('Memory', 'Game result taken back', { over })
+  }
+
   // ---------- Session memory (compressed by condense) ----------
   private compressing = false
-  private compressedUpTo = 0
+  private compressedUpTo = 0 // in lineSeq units
+
+  /** Lines said since the last compression (the App compresses every dozen). */
+  get uncompressedLines() {
+    return this.lineSeq - this.compressedUpTo
+  }
 
   /** Compress the conversation so far into long-term memory for the next session. */
   async compressSession(): Promise<void> {
-    const lines = this.transcript.slice(this.compressedUpTo)
+    const lines = this.transcript.slice(Math.max(0, this.transcript.length - (this.lineSeq - this.compressedUpTo)))
+    const upTo = this.lineSeq
+    const epoch = this.profileEpoch
     if (this.compressing || lines.length < 4) return
     this.compressing = true
     try {
@@ -690,8 +731,8 @@ export class GameController {
       ]
       const t0 = performance.now()
       const c = await compress(messages)
-      if (!c) return
-      this.compressedUpTo += lines.length
+      if (!c || epoch !== this.profileEpoch) return
+      this.compressedUpTo = upTo
       this.recordSavings('session memory', c.before, c.after, performance.now() - t0)
       this.profile = { ...this.profile, sessionMemory: flatten(c.messages).slice(0, 6000) }
       saveProfile(this.profile)
@@ -732,11 +773,13 @@ export class GameController {
 
   private async scoutJob(source: ScoutSource): Promise<Record<string, unknown>> {
     const t0 = performance.now()
+    const epoch = this.profileEpoch
     try {
       const report = await runScout(source, this.apiKey, (b, a) => this.recordSavings('Scout mistake log', b, a), (title, detail) => {
         this.scoutProgress = title
         this.log('Scout', title, detail)
       })
+      if (epoch !== this.profileEpoch) return { status: 'cancelled', reason: 'the player asked to be forgotten' }
       this.scoutReport = report
       // Memory learns the recurring mistakes, so the Tutor and the next session know them.
       // Replaced (not added) on each run, so re-scouting the same games doesn't double-count.
@@ -938,8 +981,11 @@ export class GameController {
   forgetMe(confirm: boolean): Record<string, unknown> {
     if (!confirm) return { status: 'need_confirmation', note: 'Ask the player to confirm first: this erases their name and history.' }
     resetProfile()
+    this.profileEpoch++
     this.profile = loadProfile()
     this.scoutReport = null
+    this.transcript = []
+    this.compressedUpTo = this.lineSeq
     this.log('Memory', 'Profile erased')
     return { status: 'erased' }
   }

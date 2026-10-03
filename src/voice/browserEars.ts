@@ -23,6 +23,9 @@ type Handlers = { onPhrase: (text: string) => void; onHeard?: (partial: string) 
 export class BrowserEars {
   private rec: Rec | null = null
   private want = false
+  private lastMuted = 0 // when Squarely was last heard speaking
+  private tainted = new Set<number>() // result indices that began while Squarely spoke
+  private sampler: ReturnType<typeof setInterval> | null = null
   private h: Handlers
 
   constructor(h: Handlers) {
@@ -40,19 +43,28 @@ export class BrowserEars {
     rec.lang = lang
     rec.continuous = true
     rec.interimResults = true
+    // Chrome delivers a final result after a pause, often just after Squarely stops talking, so
+    // "is it speaking now?" isn't enough: also drop phrases that started while it spoke, or within ~1.2 s.
+    this.sampler = setInterval(() => {
+      if (this.h.muted?.()) this.lastMuted = Date.now()
+    }, 150)
     rec.onresult = (e) => {
-      // Ignore what we hear while Squarely itself is speaking, so it doesn't answer its own voice.
-      if (this.h.muted?.()) return
+      const now = Date.now()
+      if (this.h.muted?.()) this.lastMuted = now
+      const echo = now - this.lastMuted < 1200
       for (let i = e.resultIndex; i < e.results.length; i++) {
         const r = e.results[i]
         const text = r[0].transcript.trim()
         if (!text) continue
+        if (echo) this.tainted.add(i)
+        if (this.tainted.has(i)) continue
         if (r.isFinal) this.h.onPhrase(text)
         else this.h.onHeard?.(text)
       }
     }
     // Chrome ends a session after a pause; keep listening until told to stop.
     rec.onend = () => {
+      this.tainted.clear() // result indices restart with each recognition session
       if (this.want) {
         try {
           rec.start()
@@ -71,6 +83,8 @@ export class BrowserEars {
   }
 
   stop(error?: string) {
+    if (this.sampler) clearInterval(this.sampler)
+    this.sampler = null
     const was = this.want
     this.want = false
     this.rec?.abort()

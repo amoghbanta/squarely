@@ -28,7 +28,7 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   // Castling first: "castle" alone means the move, not the rook.
   if (/\b(castle|castling)\b/.test(t) && !/\b(my|the|his|her) castle\b|castle (to|takes|on)\b/.test(t))
     return { name: 'make_move', args: { castle: /long|queen/.test(t) ? 'long' : 'short' } }
-  if (/\b(keep it|go on|your (move|turn)|continue)\b/.test(t)) return { name: 'engine_reply', args: {} }
+  if (/\b(keep (it|going|playing)|go on|play on|your (move|turn)|continue)\b/.test(t)) return { name: 'engine_reply', args: {} }
   const theme = Object.entries(THEME_WORDS).find(([re]) => new RegExp(re).test(t))
   if (theme && /board|colou?r|theme/.test(t)) return { name: 'change_settings', args: { board_theme: theme[1] } }
   const style = Object.entries(STYLE_WORDS).find(([re]) => new RegExp(re).test(t))

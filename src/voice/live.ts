@@ -64,7 +64,17 @@ export class LiveVoice {
   private lastConnect: [string, string, FunctionDeclaration[]] | null = null
   private gen = 0
 
-  async connect(apiKey: string, systemInstruction: string, functionDeclarations: FunctionDeclaration[]) {
+  private connecting: Promise<void> | null = null
+
+  /** One connect at a time: a second caller (typed text + board tap) waits on the same attempt. */
+  connect(apiKey: string, systemInstruction: string, functionDeclarations: FunctionDeclaration[]) {
+    this.connecting ??= this.connectInner(apiKey, systemInstruction, functionDeclarations).finally(() => {
+      this.connecting = null
+    })
+    return this.connecting
+  }
+
+  private async connectInner(apiKey: string, systemInstruction: string, functionDeclarations: FunctionDeclaration[]) {
     this.lastConnect = [apiKey, systemInstruction, functionDeclarations]
     // Callbacks from an older socket (e.g. its late close after a resume) must not touch the new one.
     const gen = ++this.gen
@@ -75,7 +85,13 @@ export class LiveVoice {
     await this.outCtx.resume()
 
     const ai = new GoogleGenAI({ apiKey })
-    this.session = await ai.live.connect({
+    // The SDK's connect() never rejects if the socket dies before setup (bad key, quota), so race it
+    // against our own error/close and a timeout; otherwise callers would wait forever.
+    let fail: (e: Error) => void = () => {}
+    const failed = new Promise<never>((_, reject) => (fail = reject))
+    let ready = false
+    const timer = setTimeout(() => fail(new Error('Gemini Live did not answer in time')), 12000)
+    const opening = ai.live.connect({
       model: LIVE_MODEL,
       config: {
         responseModalities: [Modality.AUDIO],
@@ -101,12 +117,37 @@ export class LiveVoice {
         sessionResumption: { handle: this.resumeHandle },
       },
       callbacks: {
-        onopen: () => current() && this.handlers.onState('live'),
-        onerror: (e) => current() && this.dropSession('error', String((e as ErrorEvent).message ?? e)),
-        onclose: (e) => current() && this.dropSession('closed', e.reason),
+        onopen: () => {},
+        onerror: (e) => {
+          const msg = String((e as ErrorEvent).message ?? e)
+          if (!ready) fail(new Error(msg))
+          else if (current()) this.dropSession('error', msg)
+        },
+        onclose: (e) => {
+          if (!ready) fail(new Error(e.reason || 'connection closed'))
+          else if (current()) this.dropSession('closed', e.reason)
+        },
         onmessage: (m) => current() && void this.onMessage(m),
       },
     })
+    let session: Session
+    try {
+      session = await Promise.race([opening, failed])
+    } catch (e) {
+      clearTimeout(timer)
+      void opening.then((late) => late.close()).catch(() => undefined)
+      if (current()) this.dropSession('error', (e as Error).message)
+      throw e
+    }
+    clearTimeout(timer)
+    // Closed or superseded while we were connecting: don't let this socket come back as a zombie.
+    if (!current()) {
+      session.close()
+      throw new Error('connection superseded')
+    }
+    ready = true
+    this.session = session
+    this.handlers.onState('live')
   }
 
   private resuming = false
@@ -155,7 +196,7 @@ export class LiveVoice {
       this.resumeHandle = m.sessionResumptionUpdate.newHandle
     }
     // The server rotates connections (~10 min). Resume the same conversation on a fresh socket.
-    if (m.goAway && this.lastConnect && this.resumeHandle) void this.resume()
+    if (m.goAway && this.lastConnect && this.resumeHandle) void this.resume().catch(() => undefined)
     // Each call is answered as soon as it finishes: slow background tools (the Scout) must not
     // hold up fast board tools. Async tools come back WHEN_IDLE so the buddy isn't cut off.
     for (const fc of m.toolCall?.functionCalls ?? []) {
@@ -221,12 +262,24 @@ export class LiveVoice {
     return this.micStarting
   }
 
+  private micEpoch = 0
+
   private async openMic() {
-    this.micStream = await navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
-    })
-    this.micCtx = new AudioContext({ sampleRate: 16000 })
-    await this.micCtx.audioWorklet.addModule('/worklets/mic-capture.js')
+    // stopMic() during the permission prompt bumps micEpoch; then this start gives up and cleans up.
+    const epoch = ++this.micEpoch
+    const cancelled = () => epoch !== this.micEpoch || !this.session
+    try {
+      this.micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
+      })
+      if (cancelled()) throw new Error('mic start cancelled')
+      this.micCtx = new AudioContext({ sampleRate: 16000 })
+      await this.micCtx.audioWorklet.addModule('/worklets/mic-capture.js')
+      if (cancelled()) throw new Error('mic start cancelled')
+    } catch (e) {
+      this.releaseMic()
+      throw e
+    }
     const srcNode = this.micCtx.createMediaStreamSource(this.micStream)
     this.micNode = new AudioWorkletNode(this.micCtx, 'mic-capture')
     this.micNode.port.onmessage = (e: MessageEvent<{ pcm: ArrayBuffer; level: number }>) => {
@@ -237,15 +290,21 @@ export class LiveVoice {
     this.micOn = true
   }
 
-  stopMic() {
-    if (!this.micOn) return
+  private releaseMic() {
     this.micNode?.disconnect()
     this.micStream?.getTracks().forEach((t) => t.stop())
-    void this.micCtx?.close()
+    void this.micCtx?.close().catch(() => undefined)
     this.micNode = null
     this.micStream = null
     this.micCtx = null
     this.micOn = false
+  }
+
+  stopMic() {
+    this.micEpoch++ // cancels a start that's still waiting on the permission prompt
+    const wasOn = this.micOn
+    this.releaseMic()
+    if (!wasOn) return
     try {
       this.session?.sendRealtimeInput({ audioStreamEnd: true })
     } catch {

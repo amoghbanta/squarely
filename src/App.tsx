@@ -130,7 +130,7 @@ export function App() {
     try {
       if (!v.connected) await v.connect(apiKey, systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language), toolDeclarations)
       await v.startMic()
-      setMicOn(true)
+      setMicOn(v.micOn)
       v.sendText(game.profile.name ? `(${game.profile.name} is back. Greet them by name.)` : '(A new player arrived. Say hi and ask their name.)')
     } catch (e) {
       setLiveState('error')
@@ -145,8 +145,12 @@ export function App() {
       v.stopMic()
       setMicOn(false)
     } else {
-      await v.startMic()
-      setMicOn(true)
+      try {
+        await v.startMic()
+        setMicOn(v.micOn)
+      } catch (e) {
+        setLiveDetail(String(e))
+      }
     }
   }
 
@@ -286,7 +290,7 @@ export function App() {
   // Long-term memory: condense compresses the conversation every dozen lines, when the mic stops,
   // and when the page is hidden, so the next session starts with a compact memory.
   useEffect(() => {
-    if (s.transcript.length && s.transcript.length % 12 === 0) void game.compressSession()
+    if (game.uncompressedLines >= 12) void game.compressSession()
   }, [s.transcript.length])
   useEffect(() => {
     if (!micOn) void game.compressSession()

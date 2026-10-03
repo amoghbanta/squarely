@@ -2,7 +2,7 @@
 // Used live by the Tutor and offline by the Scout over imported games.
 import { Chess, type Color } from 'chess.js'
 import type { EngineLine } from '../engine/stockfish'
-import { nameOf, other, pieces, threatsAgainst, whereIs } from './facts'
+import { VALUE, nameOf, other, pieces, threatsAgainst, whereIs } from './facts'
 
 /** squares: the kid's pieces to point at on the board (never the answer). */
 export type Punishment = { motif: string | null; hintFacts: Record<string, unknown> | null; squares?: string[] }
@@ -18,13 +18,31 @@ const copy = new Chess(fenAfterKidMove)
     return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', attacker }, squares: k ? [k] : [] }
   }
   // Fork: the moved enemy piece attacks two or more of the kid's non-pawn pieces (king included).
-  const victimSquares = pieces(copy, kidColor).filter((sq) => copy.get(sq)!.type !== 'p' && copy.attackers(sq, other(kidColor)).includes(m.to))
+  // Only targets that really cost something count: undefended, or worth more than the forker (the king always counts).
+  const victimSquares = pieces(copy, kidColor).filter((sq) => {
+    const t = copy.get(sq)!.type
+    if (t === 'p' || !copy.attackers(sq, other(kidColor)).includes(m.to)) return false
+    return t === 'k' || VALUE[t] > VALUE[m.piece] || copy.attackers(sq, kidColor).length === 0
+  })
   const victims = victimSquares.map((sq) => copy.get(sq)!.type)
   if (victims.length >= 2) {
     return {
       motif: 'fork',
       hintFacts: { kind: 'fork: one enemy piece could attack two of yours at once', attacker, targets: victims.map((v) => nameOf(v)) },
       squares: victimSquares,
+    }
+  }
+  if (m.captured && copy.attackers(m.to, kidColor).length > 0) {
+    // Defended: it's a capture you can answer, not a free piece. Say exactly that.
+    return {
+      motif: 'piece_in_danger',
+      hintFacts: {
+        kind: 'one of your pieces can be captured; you could take back, but the swap is bad for you',
+        victim: { piece: nameOf(m.captured), where: whereIs(m.to, kidColor) },
+        attacked_by: [attacker],
+        enemy_move_that_does_it: reply,
+      },
+      squares: [m.to],
     }
   }
   if (m.captured) {

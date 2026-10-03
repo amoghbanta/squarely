@@ -44,12 +44,28 @@ export class StockfishEngine {
   private waitFor(cmd: string, done: (line: string) => boolean, collect?: (line: string) => void, timeoutMs = 15000) {
     return new Promise<void>((resolve, reject) => {
       if (this.failed) return reject(this.failed)
+      let stopping = false
       const timer = setTimeout(() => {
-        this.listeners.delete(fn)
-        if (cmd.startsWith('go')) this.send('stop')
-        reject(this.failed ?? new Error(`engine timeout on "${cmd}"`))
+        const err = this.failed ?? new Error(`engine timeout on "${cmd}"`)
+        if (!cmd.startsWith('go') || this.failed) {
+          this.listeners.delete(fn)
+          return reject(err)
+        }
+        // Stop the search and swallow its late bestmove here, so it can't leak into the next job.
+        stopping = true
+        this.send('stop')
+        setTimeout(() => {
+          if (this.listeners.delete(fn)) reject(err)
+        }, 3000)
       }, timeoutMs)
       const fn = (line: string) => {
+        if (stopping) {
+          if (line.startsWith('bestmove')) {
+            this.listeners.delete(fn)
+            reject(this.failed ?? new Error(`engine timeout on "${cmd}"`))
+          }
+          return
+        }
         collect?.(line)
         if (done(line)) {
           clearTimeout(timer)

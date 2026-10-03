@@ -48,6 +48,34 @@
   // 7. forget_me needs confirm
   r = await R('forget_me', { confirm: false })
   ok('forget_confirm', r.status === 'need_confirmation', r)
+  // 8. code-review regressions
+  // 8a. "keep going" plays on offline after a hint
+  const { parseOffline } = await import('/src/agent/offline.ts')
+  ok('offline_keep_going', parseOffline('keep going')?.name === 'engine_reply', parseOffline('keep going'))
+  // 8b. no false praise: blunder, hint, keep going, then a quiet move
+  await R('new_game', { color: 'white' })
+  await R('make_move', { san: 'e4' })
+  r = await R('make_move', { san: 'Ba6' })
+  const hinted = !!r.tutor
+  await R('engine_reply')
+  const quiet = game.chess.moves().find((m) => !m.includes('x') && /^[a-h]\d$/.test(m))
+  r = await R('make_move', { san: quiet })
+  ok('no_false_praise', hinted && !r.praise, { hinted, praise: r.praise })
+  // 8c. eval cache doesn't flip when the kid switches colour
+  await R('new_game', { color: 'white' })
+  await R('make_move', { san: 'e4' })
+  const asWhite = await game.analysePosition()
+  await R('new_game', { color: 'black' })
+  const asBlack = await game.analysePosition()
+  ok('eval_not_flipped', typeof asWhite.overall === 'string' && typeof asBlack.overall === 'string', { w: asWhite.overall, b: asBlack.overall })
+  // 8d. undo after checkmate takes the result back
+  await R('new_game', { color: 'white' })
+  game.chess.load('6k1/5ppp/8/8/8/8/5PPP/R5K1 w - - 0 1')
+  const before = game.getSnapshot().profile.wins
+  await R('make_move', { san: 'Ra8#' })
+  const afterWin = game.getSnapshot().profile.wins
+  await R('undo')
+  ok('undo_unrecords_win', afterWin === before + 1 && game.getSnapshot().profile.wins === before && game.getSnapshot().panel !== 'summary', { before, afterWin, now: game.getSnapshot().profile.wins })
   await R('new_game', { color: 'white' })
   await R('change_settings', { board_theme: 'meadow', piece_style: 'friends' })
   return out
