@@ -51,6 +51,8 @@ Built in one day at the {Tech: Europe} × Google DeepMind Agentic AI Hack, Stock
 
 ## The agent
 
+<p align="center"><img src="docs/images/tech.png" alt="Squarely under the hood: you talk to Gemini 3.8 Live, which drives 28 tools across six roles (Referee, Tutor, Opponent, Teacher, Scout, Memory). Every fact comes from code, and the details are all handled." width="100%"></p>
+
 ```mermaid
 flowchart LR
   P((Player speaks)) --> L["Gemini 3.8 Live<br/>orchestrator · native audio"]
@@ -108,6 +110,7 @@ What this means for a free AI Studio key: the memory and Scout work fits about *
 
 ## Accessibility
 
+- Voice out of the box: with a key, Squarely connects as soon as you paste it and talks you around the screen; with no key, it still speaks (Kokoro-82M, a voice close to Gemini's Puck) and listens through the browser.
 - Eyes-closed play: Squarely always says where it moved, reads clarification options aloud, and answers "read the board", "where is my king?", "what's attacking me?".
 - Full keyboard play (arrows + Enter) with screen-reader announcements; drag-and-drop and tap-tap for pointer users.
 - High-contrast board and big-letter pieces, switchable by voice. Dialogs trap focus and close with Escape; reduced motion is respected.

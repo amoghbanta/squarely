@@ -23,6 +23,7 @@ import { Group, Segmented, SwitchRow } from './ui/controls'
 import { ChatIcon, KeyboardIcon, MicIcon, PersonIcon, SendIcon } from './ui/icons'
 import { BRAIN_MODEL } from './scout/scout'
 import { BrowserEars, earsSupported } from './voice/browserEars'
+import { Tour, TOUR_LINE } from './ui/Tour'
 
 /** The Live system instruction for the current profile and settings. */
 const instruction = () => systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language, game.settings.talk)
@@ -93,7 +94,8 @@ export function App() {
   const phone = usePhone()
   const [apiKey, setApiKey] = useState(readKey)
   const [keyDraft, setKeyDraft] = useState('')
-  const [rememberKey, setRememberKey] = useState(false)
+  const [nameDraft, setNameDraft] = useState(() => game.profile.name ?? '')
+  const [rememberKey, setRememberKey] = useState(true)
   const [liveState, setLiveState] = useState<LiveState>('idle')
   const [liveDetail, setLiveDetail] = useState('')
   const [micOn, setMicOn] = useState(false)
@@ -152,18 +154,42 @@ export function App() {
   game.apiKey = hasKey ? apiKey.trim() : null
   const modalOpen = !apiKey || youOpen || (!!s.panel && s.panel !== 'scout')
 
-  const start = useCallback(async () => {
+  /**
+   * Connect Gemini Live, open the mic, then say the opener. The mic goes first: opening it re-routes
+   * the Mac's audio, which would crackle over Squarely's voice if it were already talking.
+   */
+  const goLive = useCallback(async (key: string, opener: string) => {
     const v = voice.current!
     try {
-      if (!v.connected) await v.connect(apiKey, instruction(), toolDeclarations)
-      await v.startMic()
-      setMicOn(v.micOn)
-      v.sendText(game.profile.name ? `(${game.profile.name} is back. Greet them by name.)` : '(A new player arrived. Say hi and ask their name.)')
+      if (!v.connected) await v.connect(key, instruction(), toolDeclarations)
     } catch (e) {
       setLiveState('error')
       setLiveDetail(String(e))
+      return
     }
-  }, [apiKey])
+    let micError: unknown = null
+    try {
+      await v.startMic()
+      setMicOn(v.micOn)
+    } catch (e) {
+      micError = e
+    }
+    v.sendText(opener)
+    if (micError) {
+      setLiveState('error')
+      setLiveDetail(String(micError))
+    }
+  }, [])
+
+  const start = useCallback(
+    () => goLive(apiKey, game.profile.name ? `(${game.profile.name} is back. Greet them by name.)` : '(A new player arrived. Say hi and ask their name.)'),
+    [apiKey, goLive],
+  )
+
+  // The first-run tour: Squarely talks the player around the screen while a spotlight follows.
+  const [tourFrom, setTourFrom] = useState<number | null>(null)
+  const endTour = useCallback(() => setTourFrom(null), [])
+  const tourStep = useCallback((sel: string) => sel === '.side' && setTab('agent'), [])
 
   const toggleMic = async () => {
     const v = voice.current!
@@ -366,7 +392,48 @@ export function App() {
       /* storage blocked: key lives in memory for this visit */
     }
     setApiKey(k)
+    // A typed name beats a misheard one ("Amogh" is not "Henry"), and goes into the instruction below.
+    const name = nameDraft.trim()
+    if (name && name !== game.profile.name) game.remember('name', name)
+    // Still inside the tap: audio may start now. Gemini connects and gives the tour straight away.
+    localVoice.stop()
+    voice.current!.warmAudio()
+    setTourFrom(game.getSnapshot().transcript.length)
+    void goLive(
+      k,
+      `(The player just added their Gemini key and is seeing the app for the first time. Give a quick spoken tour right now, about 10 seconds, saying this or very close to it, in the player's language: "${TOUR_LINE(game.profile.name ?? null)}" Do not call any tools for this. Then wait for them.)`,
+    )
   }
+
+  // Welcome screen: Squarely says hello (pre-rendered Kokoro) on the first tap, key or paste.
+  // Browsers block audio until then, so it can't play on load.
+  useEffect(() => {
+    if (apiKey) return
+    setNameDraft(game.profile.name ?? '') // after "Forget me", don't offer the old name
+    const hello = () => {
+      removeEventListener('pointerdown', hello, true)
+      removeEventListener('keydown', hello, true)
+      void localVoice.playClip('/voice/welcome.m4a')
+    }
+    addEventListener('pointerdown', hello, true)
+    addEventListener('keydown', hello, true)
+    return () => {
+      removeEventListener('pointerdown', hello, true)
+      removeEventListener('keydown', hello, true)
+    }
+  }, [apiKey])
+
+  // With a saved key, the first tap anywhere connects Gemini (browsers only allow audio after a tap).
+  useEffect(() => {
+    if (!hasKey || liveState !== 'idle') return
+    const wake = (e: Event) => {
+      if ((e.target as Element | null)?.closest?.('.mic, .modal, form')) return
+      voice.current!.warmAudio()
+      void start()
+    }
+    addEventListener('pointerdown', wake, true)
+    return () => removeEventListener('pointerdown', wake, true)
+  }, [hasKey, liveState, start])
 
   const forgetKey = () => {
     voice.current?.close()
@@ -948,14 +1015,31 @@ export function App() {
         {s.announce}
       </div>
 
+      {tourFrom !== null && connected && !modalOpen && (
+        <Tour
+          spoken={s.transcript
+            .slice(Math.min(tourFrom, Math.max(0, s.transcript.length - 2)))
+            .filter((l) => l.who === 'buddy')
+            .map((l) => l.text)
+            .join(' ')}
+          speaking={speaking}
+          onStep={tourStep}
+          onDone={endTour}
+        />
+      )}
+
       {!apiKey && (
         <Modal title="Welcome to Squarely">
           <form onSubmit={saveKey} className="welcome">
             <div className="welcome-hero">
-              <Avatar mood="happy" size={120} />
+              <Avatar mood="happy" level={outLevel} size={120} />
             </div>
             <h2>Meet Squarely</h2>
             <p className="lead">Your chess buddy. Talk to play, learn the pieces and solve puzzles.</p>
+            <label className="field">
+              <span>What should Squarely call you?</span>
+              <input value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} placeholder="Your first name (optional)" autoComplete="given-name" maxLength={24} />
+            </label>
             <label className="field">
               <span>Gemini API key</span>
               <input type="password" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} placeholder="Paste your key" autoComplete="off" />

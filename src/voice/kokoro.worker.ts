@@ -20,7 +20,7 @@ onmessage = async (e: MessageEvent<{ type: 'load' } | { type: 'speak'; id: numbe
     const model = await load()
     if (m.type === 'load') return postMessage({ type: 'ready' })
     // Sentence by sentence, so the first words play while the rest is still being made.
-    for await (const { audio } of model.stream(m.text, { voice: m.voice as 'af_heart' })) {
+    for await (const { audio } of model.stream(m.text, { voice: m.voice as 'am_puck' })) {
       postMessage({ type: 'audio', id: m.id, pcm: audio.audio, rate: audio.sampling_rate }, { transfer: [audio.audio.buffer] })
     }
     postMessage({ type: 'done', id: m.id })

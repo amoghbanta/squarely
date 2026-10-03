@@ -3,10 +3,12 @@
 
 type Status = { state: 'off' | 'loading' | 'ready' | 'failed'; pct: number }
 
-const NICE = /Google US English|Google UK English Female|Samantha|Ava|Allison|Karen|Moira|Tessa|Serena/
+// Male voices, to sound like Squarely's Gemini voice (Puck) while Kokoro downloads.
+const NICE = /Google UK English Male|Daniel|Aaron|Arthur|Alex|Evan|Nathan|Tom|Fred/
 function systemVoice(): SpeechSynthesisVoice | null {
   const all = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'))
-  return all.find((v) => /\((Premium|Enhanced)\)/.test(v.name)) ?? all.find((v) => NICE.test(v.name)) ?? all.find((v) => v.localService) ?? null
+  const nice = all.filter((v) => NICE.test(v.name))
+  return nice.find((v) => /\((Premium|Enhanced)\)/.test(v.name)) ?? nice[0] ?? all.find((v) => v.localService) ?? null
 }
 try {
   speechSynthesis.getVoices() // Chrome loads voices lazily
@@ -16,7 +18,7 @@ try {
 
 class LocalVoice {
   status: Status = { state: 'off', pct: 0 }
-  voice = 'af_heart'
+  voice = 'am_puck' // Kokoro's Puck, matching the Gemini Live voice
   onStatus?: (s: Status) => void
   onLevel?: (level: number) => void
   private worker: Worker | null = null
@@ -58,6 +60,20 @@ class LocalVoice {
       speechSynthesis.speak(u)
     } catch {
       /* no TTS available */
+    }
+  }
+
+  /** Play a pre-rendered Kokoro clip (e.g. the welcome line). Call from a user gesture. */
+  async playClip(url: string) {
+    this.stop()
+    this.ctx ??= new AudioContext()
+    void this.ctx.resume()
+    const id = this.id
+    try {
+      const buf = await this.ctx.decodeAudioData(await (await fetch(url)).arrayBuffer())
+      if (id === this.id) this.enqueue(buf.getChannelData(0), buf.sampleRate)
+    } catch {
+      /* no audio: the welcome screen still reads fine */
     }
   }
 

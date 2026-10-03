@@ -12,7 +12,9 @@ export const TALK_STYLE: Record<TalkStyle, { label: string; rule: string }> = {
 }
 
 export function systemInstruction(profile: Profile, level: number, kidsMode: boolean, language = 'English', talk: TalkStyle = 'balanced') {
-  const name = profile.name ? `The kid's name is ${profile.name}.` : "You don't know the kid's name yet: ask for it first, then call remember(kind=name)."
+  const name = profile.name
+    ? `The kid's name is ${profile.name} (they typed it, so this spelling is right; never replace it with a name you think you heard).`
+    : "You don't know the kid's name yet: ask for it first. Names are easy to mishear, so say it back and ask if you got it right (\"<name>, did I get that right?\") before calling remember(kind=name). If they say no, ask them to spell it or type it. Never swap in a different, more common name."
   const mistakes = topMistakes(profile)
   const memory = [
     name,

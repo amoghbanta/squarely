@@ -161,6 +161,23 @@ a { color: var(--tint); }
 }
 .pill-btn { flex: none; min-height: 44px; padding: 7px 16px; border-radius: 999px; background: var(--tint); color: #fff; font-weight: 600; font-size: 15px; }
 
+/* ---------- first-run tour: a spotlight that follows Squarely's voice, never blocking taps ---------- */
+.tour { position: fixed; inset: 0; z-index: 40; pointer-events: none; }
+.tour-ring {
+  position: fixed; border-radius: 22px; outline: 3px solid var(--tint);
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.42), 0 0 24px 6px var(--tint-soft);
+  transition: top 0.45s cubic-bezier(0.3, 0.9, 0.3, 1), left 0.45s cubic-bezier(0.3, 0.9, 0.3, 1), width 0.45s cubic-bezier(0.3, 0.9, 0.3, 1), height 0.45s cubic-bezier(0.3, 0.9, 0.3, 1);
+}
+.tour-tip {
+  position: fixed; padding: 12px 16px; border-radius: 16px; background: var(--surface); color: var(--label);
+  box-shadow: var(--shadow); font: 600 16px/1.35 var(--rounded); animation: tour-in 0.3s ease both;
+}
+.tour-dots { display: flex; gap: 5px; margin-top: 8px; }
+.tour-dots i { width: 6px; height: 6px; border-radius: 50%; background: var(--fill-strong); }
+.tour-dots i.on { background: var(--tint); width: 16px; border-radius: 3px; }
+@keyframes tour-in { from { opacity: 0; transform: translateY(6px); } }
+@media (prefers-reduced-motion: reduce) { .tour-ring { transition: none; } .tour-tip { animation: none; } }
+
 /* ---------- dock ---------- */
 .dock { width: min(100%, 620px); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 8px; }
 .mic-wrap { display: grid; justify-items: center; gap: 6px; }

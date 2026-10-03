@@ -1,0 +1,153 @@
+<!doctype html>
+<!-- Source of tech.png (1920×1080). Re-render: W=1920 H=1080 node scripts/e2e/cdp.mjs file://$PWD/docs/images/tech.html 1500 "SHOT:docs/images/tech.png" -->
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  :root {
+    --bg: #0b0b12; --card: #16161f; --card-2: #1d1d29; --line: rgba(255,255,255,0.09);
+    --label: #fff; --label-2: rgba(235,235,245,0.66); --label-3: rgba(235,235,245,0.4);
+    --tint: #7d7aff; --gem: #4f8cff; --green: #30d158; --orange: #ff9f0a; --pink: #ff6ec7; --teal: #40c8e0;
+    --font: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Helvetica Neue', system-ui, sans-serif;
+    --rounded: ui-rounded, 'SF Pro Rounded', -apple-system, system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    width: 1920px; height: 1080px; overflow: hidden; background: var(--bg); color: var(--label); font: 20px/1.35 var(--font);
+    background-image: radial-gradient(900px 500px at 50% 30%, rgba(125,122,255,0.16), transparent 70%), radial-gradient(700px 400px at 90% 100%, rgba(48,209,88,0.07), transparent 70%);
+    padding: 36px 64px 32px; display: grid; grid-template-rows: auto auto auto 1fr auto; gap: 18px;
+  }
+  h1 { font: 800 50px/1 var(--rounded); letter-spacing: -0.02em; }
+  h1 small { font: 500 24px var(--font); color: var(--label-2); margin-left: 18px; letter-spacing: 0; }
+  header { display: flex; align-items: center; gap: 20px; }
+  header img { width: 72px; height: 72px; border-radius: 20px; }
+  header .claim { margin-left: auto; text-align: right; font: 600 20px/1.35 var(--rounded); color: var(--label-2); }
+  header .claim b { color: var(--green); }
+
+  /* flow */
+  .flow { display: grid; grid-template-columns: 250px 60px 430px 60px 1fr; align-items: stretch; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 24px; padding: 20px 22px; }
+  .k { font: 700 13px var(--font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--label-3); margin-bottom: 8px; }
+  .you ul, .live ul { list-style: none; padding: 0; display: grid; gap: 12px; }
+  .you li { display: flex; gap: 12px; align-items: center; font-size: 19px; }
+  .you li i { font-style: normal; width: 34px; height: 34px; border-radius: 10px; display: grid; place-items: center; background: var(--card-2); font-size: 18px; }
+  .arrow { display: grid; place-items: center; color: var(--label-3); font-size: 34px; }
+  .arrow span { display: grid; justify-items: center; gap: 4px; font: 600 12px var(--font); letter-spacing: 0.08em; text-transform: uppercase; }
+  .live { border: 1.5px solid rgba(79,140,255,0.55); background: linear-gradient(160deg, rgba(79,140,255,0.16), rgba(125,122,255,0.08) 60%, var(--card)); box-shadow: 0 0 60px rgba(79,140,255,0.18); }
+  .live h2 { font: 800 32px/1.1 var(--rounded); margin-bottom: 4px; }
+  .live h2 em { font-style: normal; background: linear-gradient(90deg, #4f8cff, #a97bff, #ff6ec7); -webkit-background-clip: text; color: transparent; }
+  .live p.sub { color: var(--label-2); font-size: 18px; margin-bottom: 14px; }
+  .live li { font-size: 18px; padding-left: 22px; position: relative; color: rgba(255,255,255,0.88); }
+  .live li::before { content: ''; position: absolute; left: 4px; top: 9px; width: 8px; height: 8px; border-radius: 50%; background: var(--gem); }
+
+  .roles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .role { padding: 13px 18px; border-radius: 20px; background: var(--card); border: 1px solid var(--line); position: relative; overflow: hidden; }
+  .role::before { content: ''; position: absolute; inset: 0 auto 0 0; width: 4px; background: var(--c); }
+  .role h3 { font: 700 21px var(--rounded); display: flex; align-items: center; gap: 8px; }
+  .role h3 span { font-size: 22px; }
+  .role p { color: var(--label-2); font-size: 16px; margin-top: 4px; }
+  .role .src { display: inline-block; margin-top: 8px; font: 600 13px var(--font); color: var(--c); background: color-mix(in srgb, var(--c) 14%, transparent); padding: 3px 9px; border-radius: 999px; }
+  .role.scout { grid-column: span 3; border-color: rgba(255,159,10,0.4); }
+  .role.scout .tag { position: absolute; top: 14px; right: 16px; font: 700 12px var(--font); letter-spacing: 0.1em; text-transform: uppercase; color: var(--orange); }
+
+  /* truth band */
+  .truth { display: flex; align-items: center; gap: 18px; padding: 16px 24px; border-radius: 20px; background: rgba(48,209,88,0.1); border: 1px solid rgba(48,209,88,0.35); font-size: 20px; }
+  .truth b { font: 800 22px var(--rounded); color: var(--green); white-space: nowrap; }
+  .truth .rc { margin-left: auto; white-space: nowrap; font: 600 15px var(--font); color: var(--green); background: rgba(48,209,88,0.16); padding: 6px 12px; border-radius: 999px; }
+
+  /* details */
+  .details h4 { font: 700 15px var(--font); letter-spacing: 0.12em; text-transform: uppercase; color: var(--label-3); margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+  .d { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 10px 14px; display: flex; gap: 12px; align-items: flex-start; }
+  .d i { font-style: normal; font-size: 22px; line-height: 1.1; }
+  .d b { display: block; font: 700 17px/1.25 var(--rounded); }
+  .d small { display: block; color: var(--label-2); font-size: 14.5px; line-height: 1.3; margin-top: 2px; }
+
+  /* stats */
+  .stats { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; }
+  .stat { text-align: center; padding: 10px 8px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }
+  .stat b { display: block; font: 800 32px/1.05 var(--rounded); }
+  .stat span { color: var(--label-2); font-size: 15px; }
+  .stat.p b { color: var(--pink); }
+  .stat.g b { color: var(--green); }
+</style>
+</head>
+<body>
+  <header>
+    <img src="logo.png" alt="" />
+    <h1>Squarely<small>a voice-first chess buddy: the tech under the plush</small></h1>
+    <div class="claim">The model talks. Code knows the chess.<br /><b>Nothing it says is made up.</b></div>
+  </header>
+
+  <section class="flow">
+    <div class="card you">
+      <div class="k">You</div>
+      <ul>
+        <li><i>🎙️</i>Talk, and interrupt</li>
+        <li><i>✋</i>Drag or tap pieces</li>
+        <li><i>⌨️</i>Type</li>
+        <li><i>🔊</i>Screen reader</li>
+        <li><i>🙈</i>Eyes closed</li>
+        <li><i>📴</i>No key? Offline</li>
+      </ul>
+    </div>
+    <div class="arrow"><span>⇄<br />audio</span></div>
+    <div class="card live">
+      <div class="k">Orchestrator</div>
+      <h2><em>Gemini 3.8 Live</em></h2>
+      <p class="sub">Native audio in and out, deciding which tool to call next</p>
+      <ul>
+        <li>28 function-calling tools, blocking and background</li>
+        <li>Tuned voice detection, barge-in mid-sentence</li>
+        <li>Truth rules, talk styles, 15 languages</li>
+        <li>Your key stays in your browser</li>
+        <li>Memory compressed by <b>condense.chat</b></li>
+      </ul>
+    </div>
+    <div class="arrow"><span>⇄<br />tools</span></div>
+    <div class="roles">
+      <div class="role" style="--c: var(--teal)"><h3><span>⚖️</span>Referee</h3><p>Legal moves, misheard-move repair, "move it there"</p><span class="src">chess.js</span></div>
+      <div class="role" style="--c: var(--gem)"><h3><span>🧠</span>Tutor</h3><p>Threats, best move arrows, move grades</p><span class="src">Stockfish 19 · WASM</span></div>
+      <div class="role" style="--c: var(--tint)"><h3><span>♟️</span>Opponent</h3><p>Plays at your level, adapts as you improve</p><span class="src">Stockfish 19 · WASM</span></div>
+      <div class="role" style="--c: var(--pink)"><h3><span>🎓</span>Teacher</h3><p>6 piece lessons, 280 puzzles, hint ladders</p><span class="src">Lichess CC0 · curated book</span></div>
+      <div class="role" style="--c: var(--green)"><h3><span>💾</span>Memory</h3><p>Profile, saved games, weak spots, session notes</p><span class="src">condense.chat · local</span></div>
+      <div class="role" style="--c: #a2a2b5"><h3><span>🗣️</span>Offline voice</h3><p>Speaks with no key and no server</p><span class="src">Kokoro-82M in browser</span></div>
+      <div class="role scout" style="--c: var(--orange)"><span class="tag">2nd agent · background</span><h3><span>🔭</span>Scout</h3><p>Pulls your real chess.com games, checks every move with Stockfish, then writes a practice plan</p><span class="src">chess.com API · Stockfish · Gemini 3.8 Flash via condense.chat proxy</span></div>
+    </div>
+  </section>
+
+  <div class="truth">
+    <b>The truth law</b>
+    <span>Every fact is computed in code (chess.js, Stockfish, the puzzle's real solution). Gemini only phrases it, and every spoken line shows its source.</span>
+    <span class="rc">✓ Tutor · Stockfish</span>
+  </div>
+
+  <section class="details">
+    <h4>Small things, all handled</h4>
+    <div class="grid">
+      <div class="d"><i>👂</i><div><b>"Night to G3"</b><small>Sound-alikes repaired in code; garbled words never play a move</small></div></div>
+      <div class="d"><i>🟩</i><div><b>Illegal move?</b><small>The squares it can reach light up, with numbered choices</small></div></div>
+      <div class="d"><i>🧷</i><div><b>"Move it to f3"</b><small>Remembers which piece you were just talking about</small></div></div>
+      <div class="d"><i>🤔</i><div><b>Blunder → a question</b><small>Pauses and asks before it tells; undo is one word</small></div></div>
+      <div class="d"><i>🧩</i><div><b>Hints never leak</b><small>Idea → which piece → the move, from the real solution</small></div></div>
+      <div class="d"><i>👁️</i><div><b>Never guesses the board</b><small>Won't name a square it hasn't checked</small></div></div>
+      <div class="d"><i>⏸️</i><div><b>Pause, save, review</b><small>Autosaved games, replay with grades and better moves</small></div></div>
+      <div class="d"><i>🧒</i><div><b>Kids mode, never announced</b><small>Simpler words and animal pieces, no label</small></div></div>
+      <div class="d"><i>💬</i><div><b>Talk styles</b><small>To the point, balanced or chatty, switched by voice</small></div></div>
+      <div class="d"><i>♿</i><div><b>Accessible by default</b><small>Live screen-reader announcements, big letters, keyboard</small></div></div>
+      <div class="d"><i>👋</i><div><b>Spoken first-run tour</b><small>A spotlight follows Squarely's words around the screen</small></div></div>
+      <div class="d"><i>🧪</i><div><b>Tested like a product</b><small>Browser e2e suites plus real Gemini Live voice runs</small></div></div>
+    </div>
+  </section>
+
+  <section class="stats">
+    <div class="stat"><b>28</b><span>agent tools</span></div>
+    <div class="stat"><b>2</b><span>agents</span></div>
+    <div class="stat"><b>6</b><span>roles</span></div>
+    <div class="stat"><b>280</b><span>Lichess puzzles</span></div>
+    <div class="stat"><b>15</b><span>languages</span></div>
+    <div class="stat g"><b>−50%</b><span>memory tokens · condense</span></div>
+    <div class="stat p"><b>−61%</b><span>build tokens · dense</span></div>
+  </section>
+</body>
+</html>

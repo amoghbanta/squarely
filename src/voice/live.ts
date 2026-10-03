@@ -235,7 +235,9 @@ export class LiveVoice {
     const src = ctx.createBufferSource()
     src.buffer = buf
     src.connect(ctx.destination)
-    this.nextStart = Math.max(this.nextStart, ctx.currentTime + 0.03)
+    // Starting fresh (or after the network fell behind): queue 150 ms ahead so jitter between
+    // chunks doesn't leave gaps that sound like the voice breaking up.
+    if (this.nextStart < ctx.currentTime + 0.02) this.nextStart = ctx.currentTime + 0.15
     src.start(this.nextStart)
     // Drive the avatar's mouth with the loudness of each chunk, in time with playback.
     let sum = 0
