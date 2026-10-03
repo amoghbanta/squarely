@@ -1,10 +1,10 @@
-// Squarely, the character: a squishy little pony-ish creature (a friendly nod to the knight) with a
-// punky mane, big shiny eyes and a soft snout. Its face follows the conversation:
-// idle (blinks, floats), listening (eyes wide, ears up), talking (mouth follows the real voice level),
-// thinking (eyes up), worried (tutor stepped in), happy (praise or a win), sleeping.
+// Squarely, the character: a soft, fuzzy cream plush with little bunny-bear ears, beady eyes, rosy
+// cheeks and a purple scarf with a tiny chessboard on it. Its face follows the conversation:
+// idle (blinks, floats), listening (ears perk, eyes a touch bigger), talking (mouth follows the real
+// voice level), thinking (eyes up), worried (tutor stepped in), happy (praise or a win), sleeping.
 import { useId } from 'react'
 
-const INK = '#2a2350'
+const INK = '#2b2233'
 
 export type Mood = 'idle' | 'listening' | 'talking' | 'thinking' | 'worried' | 'happy' | 'sleeping'
 
@@ -12,99 +12,100 @@ type Props = { mood: Mood; level?: number; size?: number; className?: string }
 
 export function Avatar({ mood, level = 0, size = 80, className = '' }: Props) {
   const uid = useId().replace(/:/g, '')
-  const body = `sq-body-${uid}`
-  const mane = `sq-mane-${uid}`
+  const fur = `sq-fur-${uid}`
+  const plush = `sq-plush-${uid}`
+  const scarf = `sq-scarf-${uid}`
   // Mouth opening follows the voice level while talking.
-  const open = mood === 'talking' ? 2.5 + Math.min(1, level * 6) * 9 : 0
-  const eyeY = mood === 'thinking' ? 51 : 54
-  const lookX = mood === 'thinking' ? 2 : 0
-  const lookY = mood === 'thinking' ? -2 : 0
-  const eyeR = mood === 'listening' ? 11 : 10
+  const open = mood === 'talking' ? 2 + Math.min(1, level * 6) * 6 : 0
+  const eyeY = mood === 'thinking' ? 52 : 55
+  const lookX = mood === 'thinking' ? 1.5 : 0
+  const eyeR = mood === 'listening' ? 4.4 : 3.8
   return (
     <svg className={`avatar mood-${mood} ${className}`} width={size} height={size} viewBox="0 0 100 100" aria-hidden>
       <defs>
-        <linearGradient id={body} x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stopColor="var(--av-top, #a99bff)" />
+        {/* soft fur: a gentle wobble on the outline only */}
+        <filter id={fur} x="-10%" y="-10%" width="120%" height="120%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.85" numOctaves="2" seed="3" />
+          <feDisplacementMap in="SourceGraphic" scale="2.6" xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+        <radialGradient id={plush} cx="45%" cy="38%" r="70%">
+          <stop offset="0" stopColor="#fffaf2" />
+          <stop offset="0.65" stopColor="#fbefdf" />
+          <stop offset="1" stopColor="#efdcc4" />
+        </radialGradient>
+        <linearGradient id={scarf} x1="0" y1="0" x2="1" y2="0">
+          <stop offset="0" stopColor="var(--av-top, #8b7bff)" />
           <stop offset="1" stopColor="var(--av-bottom, #6c5ce7)" />
-        </linearGradient>
-        <linearGradient id={mane} x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="#ff7aa8" />
-          <stop offset="1" stopColor="#ffa25c" />
         </linearGradient>
       </defs>
       <g className="av-body">
         {/* little feet */}
-        <ellipse cx="33" cy="94" rx="10" ry="5" fill="#5546cf" />
-        <ellipse cx="67" cy="94" rx="10" ry="5" fill="#5546cf" />
-        {/* a swoopy pony quiff behind the head, with a tiny chessboard in it */}
-        <g className="av-mane">
-          <path d="M36 40 C33 16 46 3 61 4 C73 5 80 14 77 27 L75 40 Z" fill={`url(#${mane})`} />
-          <rect x="55" y="9" width="4.5" height="4.5" rx="0.8" fill="#fff" opacity="0.9" />
-          <rect x="59.5" y="13.5" width="4.5" height="4.5" rx="0.8" fill="#fff" opacity="0.9" />
-          <rect x="64" y="9" width="4.5" height="4.5" rx="0.8" fill="#fff" opacity="0.55" />
+        <ellipse cx="36" cy="93" rx="9" ry="5" fill="#ead6bb" />
+        <ellipse cx="64" cy="93" rx="9" ry="5" fill="#ead6bb" />
+        <g filter={`url(#${fur})`}>
+          {/* soft ears, pink inside; they perk up when listening */}
+          <g className="av-ears">
+            <ellipse cx="31" cy="24" rx="9.5" ry="15" fill={`url(#${plush})`} transform="rotate(-14 31 24)" />
+            <ellipse cx="69" cy="24" rx="9.5" ry="15" fill={`url(#${plush})`} transform="rotate(14 69 24)" />
+          </g>
+          {/* round, squishy body */}
+          <ellipse cx="50" cy="58" rx="39" ry="36" fill={`url(#${plush})`} />
         </g>
-        {/* ears (pony), pink inside; they perk up when listening */}
-        <g className="av-ears">
-          <path d="M19 36 C16 20 20 9 27 6 C33 11 36 21 35 31 Z" fill={`url(#${body})`} />
-          <path d="M23 30 C22 21 24 14 27.5 11.5 C31 15 32 22 31 28 Z" fill="#ffb8d0" />
-          <path d="M81 36 C84 20 80 9 73 6 C67 11 64 21 65 31 Z" fill={`url(#${body})`} />
-          <path d="M77 30 C78 21 76 14 72.5 11.5 C69 15 68 22 69 28 Z" fill="#ffb8d0" />
+        <ellipse cx="31" cy="25" rx="4.5" ry="9" fill="#ffc6d6" transform="rotate(-14 31 25)" className="av-ear-in" />
+        <ellipse cx="69" cy="25" rx="4.5" ry="9" fill="#ffc6d6" transform="rotate(14 69 25)" className="av-ear-in" />
+        {/* a purple scarf with a tiny chessboard */}
+        <path d="M17 76 C30 85 70 85 83 76 L84 82 C70 92 30 92 16 82 Z" fill={`url(#${scarf})`} />
+        <g fill="#fff" opacity="0.85">
+          <rect x="62" y="81" width="3.2" height="3.2" rx="0.5" />
+          <rect x="65.2" y="84.2" width="3.2" height="3.2" rx="0.5" />
+          <rect x="68.4" y="81" width="3.2" height="3.2" rx="0.5" />
         </g>
-        {/* squishy rounded-square body */}
-        <rect x="9" y="22" width="82" height="74" rx="32" fill={`url(#${body})`} />
-        <rect x="9" y="22" width="82" height="74" rx="32" fill="none" stroke="rgba(255,255,255,0.35)" strokeWidth="1.5" />
-        {/* forelock falling over the forehead */}
-        <path className="av-mane" d="M44 26 C51 24 57 29 57 38 C52 34 47 33 41 35 C41 31 41 28 44 26 Z" fill={`url(#${mane})`} />
-        {/* small soft snout */}
-        <ellipse cx="50" cy="76" rx="15" ry="10" fill="#efe9ff" />
-        {/* shine */}
-        <ellipse cx="27" cy="38" rx="7" ry="4" fill="#fff" opacity="0.35" transform="rotate(-25 27 38)" />
+        {/* soft light on the head */}
+        <ellipse cx="36" cy="38" rx="8" ry="4" fill="#fff" opacity="0.4" transform="rotate(-18 36 38)" />
       </g>
       <g className="av-eyes">
         {mood === 'sleeping' || mood === 'happy' ? (
           <>
-            <path d={mood === 'happy' ? 'M29 56 q7 -9 14 0' : 'M29 54 q7 5 14 0'} stroke={INK} strokeWidth="4" fill="none" strokeLinecap="round" />
-            <path d={mood === 'happy' ? 'M57 56 q7 -9 14 0' : 'M57 54 q7 5 14 0'} stroke={INK} strokeWidth="4" fill="none" strokeLinecap="round" />
+            <path d={mood === 'happy' ? 'M35 56 q4 -5 8 0' : 'M35 55 q4 3 8 0'} stroke={INK} strokeWidth="2.6" fill="none" strokeLinecap="round" />
+            <path d={mood === 'happy' ? 'M57 56 q4 -5 8 0' : 'M57 55 q4 3 8 0'} stroke={INK} strokeWidth="2.6" fill="none" strokeLinecap="round" />
           </>
         ) : (
           <>
             <g className="av-eye">
-              <ellipse cx={36 + lookX} cy={eyeY + lookY} rx={eyeR * 0.78} ry={eyeR} fill={INK} />
-              <circle cx={38.8 + lookX} cy={eyeY + lookY - 4} r="3.3" fill="#fff" />
-              <circle cx={33.8 + lookX} cy={eyeY + lookY + 3.5} r="1.5" fill="#fff" opacity="0.85" />
+              <ellipse cx={39 + lookX} cy={eyeY} rx={eyeR * 0.9} ry={eyeR * 1.1} fill={INK} />
+              <circle cx={40.2 + lookX} cy={eyeY - 1.6} r="1.2" fill="#fff" />
             </g>
             <g className="av-eye">
-              <ellipse cx={64 + lookX} cy={eyeY + lookY} rx={eyeR * 0.78} ry={eyeR} fill={INK} />
-              <circle cx={66.8 + lookX} cy={eyeY + lookY - 4} r="3.3" fill="#fff" />
-              <circle cx={61.8 + lookX} cy={eyeY + lookY + 3.5} r="1.5" fill="#fff" opacity="0.85" />
+              <ellipse cx={61 + lookX} cy={eyeY} rx={eyeR * 0.9} ry={eyeR * 1.1} fill={INK} />
+              <circle cx={62.2 + lookX} cy={eyeY - 1.6} r="1.2" fill="#fff" />
             </g>
           </>
         )}
         {mood === 'worried' && (
           <>
-            <path d="M29 40 l11 -4" stroke={INK} strokeWidth="3.2" strokeLinecap="round" />
-            <path d="M71 40 l-11 -4" stroke={INK} strokeWidth="3.2" strokeLinecap="round" />
+            <path d="M34 47 l8 -2.5" stroke={INK} strokeWidth="2.2" strokeLinecap="round" />
+            <path d="M66 47 l-8 -2.5" stroke={INK} strokeWidth="2.2" strokeLinecap="round" />
           </>
         )}
       </g>
       <g className="av-mouth">
         {mood === 'talking' ? (
-          <rect x={50 - 7} y={78 - open / 2} width="14" height={Math.max(3.5, open)} rx={Math.min(7, Math.max(1.8, open / 2))} fill={INK} />
+          <ellipse cx="50" cy={66 + open / 4} rx="4" ry={Math.max(1.6, open / 2)} fill="#c2405f" stroke={INK} strokeWidth="1.6" />
         ) : mood === 'worried' ? (
-          <path d="M44 81 q6 -5 12 0" stroke={INK} strokeWidth="3.6" fill="none" strokeLinecap="round" />
+          <path d="M45.5 68 q4.5 -3.5 9 0" stroke={INK} strokeWidth="2.4" fill="none" strokeLinecap="round" />
         ) : mood === 'thinking' ? (
-          <path d="M45 79 h10" stroke={INK} strokeWidth="3.6" strokeLinecap="round" />
+          <path d="M46.5 66.5 h7" stroke={INK} strokeWidth="2.4" strokeLinecap="round" />
         ) : mood === 'listening' ? (
-          <ellipse cx="50" cy="78" rx="4" ry="3.6" fill={INK} />
+          <ellipse cx="50" cy="66.5" rx="2.6" ry="2.2" fill={INK} />
         ) : mood === 'happy' ? (
-          <path d="M42 75 q8 10 16 0 z" fill={INK} stroke={INK} strokeWidth="2.5" strokeLinejoin="round" />
+          <path d="M44 64.5 q6 7 12 0 z" fill="#c2405f" stroke={INK} strokeWidth="2.2" strokeLinejoin="round" />
         ) : (
-          <path d="M44 76 q6 5 12 0" stroke={INK} strokeWidth="3.6" fill="none" strokeLinecap="round" />
+          <path d="M45 64.5 q5 4.5 10 0" stroke={INK} strokeWidth="2.4" fill="none" strokeLinecap="round" />
         )}
         {mood !== 'worried' && mood !== 'thinking' && (
           <>
-            <ellipse cx="21" cy="67" rx="6.5" ry="4" fill="rgba(255,122,168,0.55)" />
-            <ellipse cx="79" cy="67" rx="6.5" ry="4" fill="rgba(255,122,168,0.55)" />
+            <ellipse cx="28.5" cy="63" rx="6" ry="3.8" fill="#ffadc3" opacity="0.75" />
+            <ellipse cx="71.5" cy="63" rx="6" ry="3.8" fill="#ffadc3" opacity="0.75" />
           </>
         )}
       </g>
