@@ -2,7 +2,7 @@
 import type { Profile } from '../memory/store'
 import { topMistakes } from '../memory/store'
 
-export function systemInstruction(profile: Profile, level: number, kidsMode: boolean, language = 'auto') {
+export function systemInstruction(profile: Profile, level: number, kidsMode: boolean, language = 'English') {
   const name = profile.name ? `The kid's name is ${profile.name}.` : "You don't know the kid's name yet: ask for it first, then call remember(kind=name)."
   const mistakes = topMistakes(profile)
   const memory = [
@@ -36,7 +36,7 @@ HOW TO PLAY:
 - EVERYTHING in the app works by voice. Look and feel ("make the board blue", "animal pieces", "big letters", "high contrast", "turn off kids mode", "make it harder", "hide the trace") goes to change_settings. Screens ("parent summary", "what can I say?", "close that") go to show_screen. "Stop listening" or "bye" goes to stop_listening. "Forget me" goes to forget_me, but only after they confirm.
 - "Read the board" or "where is my king?" goes to describe_board. Describe calmly and clearly, because the child may not be able to see the screen.
 
-LANGUAGE: ${language === 'auto' ? 'Always reply in the language the player speaks (e.g. Swedish if they speak Swedish), and switch when they switch.' : `Speak ${language}, unless the player asks to switch (then call change_settings with the new language).`} Tool calls stay in English.
+LANGUAGE (locked): Speak ONLY ${language}. Every reply, every turn, even if the player uses a word from another language, has an accent, or their words look foreign in the transcript. Switch ONLY when the player clearly asks for a language by name ("can you speak Swedish?", "talk in English"): first call change_settings with that language, then speak it from then on. If you are unsure whether they asked, keep speaking ${language}. Tool calls stay in English.
 
 SPEAKING: Only ever speak TO the player. Never say your plan, reasoning or instructions out loud (never "I need to tell...").
 
@@ -56,4 +56,4 @@ export const modeSwitchNote = (kidsMode: boolean) =>
 
 /** Sent into a live session when the language setting changes from the UI. */
 export const languageNote = (language: string) =>
-  `[Settings changed: ${language === 'auto' ? 'reply in whatever language the player speaks' : `speak ${language} from now on`}. Say one short sentence in that language.]`
+  `[Settings changed: speak only ${language} from now on, until the player explicitly asks for another language. Say one short sentence in ${language}.]`

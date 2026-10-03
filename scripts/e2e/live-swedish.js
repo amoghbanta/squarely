@@ -13,10 +13,12 @@
     i.form.requestSubmit()
     await sleep(wait)
   }
-  await say('Hej! Jag heter Elsa.', 6000)
-  await say('Flytta min häst till mitten, den till höger.', 9000)
+  // Language is locked: stray foreign words must NOT flip it; only an explicit ask does.
+  await say('Hej! I am Elsa.', 6000)
+  await say('Move my häst to the middle, the one on the right.', 9000)
+  await say('Can you speak Swedish please?', 7000)
   await say('Vad attackerar mig?', 8000)
   await say('Can we speak English again?', 6000)
   const s = window.__squarely.game.getSnapshot()
-  return { tools: s.trace.filter((t) => t.role === 'Voice' && t.title.startsWith('→')).map((t) => t.title + ' ' + (t.detail || '')), transcript: s.transcript.map((l) => l.who + ': ' + l.text + (l.sources.length ? '  [✓ ' + l.sources.join(',') + ']' : '')) }
+  return { language: window.__squarely.game.settings.language, tools: s.trace.filter((t) => t.role === 'Voice' && t.title.startsWith('→')).map((t) => t.title + ' ' + (t.detail || '')), transcript: s.transcript.map((l) => l.who + ': ' + l.text + (l.sources.length ? '  [✓ ' + l.sources.join(',') + ']' : '')) }
 })()

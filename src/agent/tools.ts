@@ -108,7 +108,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
         kids_mode: { type: 'boolean' },
         level: { type: 'integer', description: '1 easiest to 5 hardest' },
         show_agent_trace: { type: 'boolean' },
-        language: { type: 'string', description: 'language to speak, e.g. "Swedish", "Spanish", or "auto" to follow the player' },
+        language: { type: 'string', description: 'language to speak from now on, e.g. "Swedish", "Spanish". ONLY when the player explicitly asks for a language by name; never because they used a foreign word' },
       },
     },
   },

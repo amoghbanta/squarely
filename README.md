@@ -127,12 +127,24 @@ api/condense.js        Serverless relay to condense.chat
 scripts/e2e/           Headless-Chromium end-to-end checks over CDP
 ```
 
+## Known issues
+
+**Gemini Live can drift between languages mid-conversation.** With the model left to "reply in the language the player speaks", `gemini-3.8-live` sometimes switched language on its own between turns. A single borrowed word, an accent, or a mis-transcribed phrase was enough, even when the player never changed language. For a child, or for someone playing with their eyes closed, a sudden switch is confusing.
+
+What Squarely does about it:
+- **The language is locked.** The default is English. The system instruction tells the model to speak only that language, whatever words the player uses.
+- **Switching is explicit.** The player asks by name ("can you speak Swedish?"), or picks a language in Settings. The model has to call `change_settings(language)` before it speaks the new language, so every switch appears in the agent trace.
+- **The lock survives reconnects.** The stored instruction is refreshed on every switch, so a Live session rotation (`goAway` → resume) can't revert to an old language.
+- The old "Auto (follow me)" setting is gone. A saved `auto` is migrated to English.
+
+`scripts/e2e/live-swedish.js` checks this: a Swedish word inside English stays English, "can you speak Swedish?" switches, and "speak English again" switches back. This is a prompt-level guard, not a model setting, so drift is now rare but not impossible. If it happens, say "speak English" to snap it back.
+
 ## Testing
 
 `scripts/e2e/` drives the real app in headless Chromium. It covers:
 - Offline tool regressions: ambiguity, settings, race between a voice move and New game, playing black, undo, illegal moves.
 - Mate, promotion and castling.
-- Live-voice scenarios: the tutor blunder → hint → fix beat, eyes-closed play, every setting by voice, and a Swedish conversation.
+- Live-voice scenarios: the tutor blunder → hint → fix beat, eyes-closed play, every setting by voice, and the language lock (stays put, switches only when asked).
 
 See `scripts/e2e/README.md`.
 

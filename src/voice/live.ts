@@ -96,6 +96,11 @@ export class LiveVoice {
   }
 
   private resuming = false
+  /** Keep the instruction used on reconnect/resume in step with settings (e.g. the locked language). */
+  updateInstruction(systemInstruction: string) {
+    if (this.lastConnect) this.lastConnect[1] = systemInstruction
+  }
+
   private async resume() {
     if (this.resuming || !this.lastConnect) return
     this.resuming = true

@@ -43,7 +43,7 @@ const RECEIPT: Record<string, string> = {
   new_game: 'Referee',
 }
 
-const LANGUAGES = ['auto', 'English', 'Svenska', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', 'Nederlands', 'Polski', 'Türkçe', 'العربية', 'हिन्दी', '中文', '日本語', '한국어']
+const LANGUAGES = ['English', 'Svenska', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', 'Nederlands', 'Polski', 'Türkçe', 'العربية', 'हिन्दी', '中文', '日本語', '한국어']
 
 const QUICK = ["What's attacking me?", 'Give me a hint', 'Undo', 'Read the board']
 
@@ -88,7 +88,13 @@ export function App() {
   const voice = useRef<LiveVoice | null>(null)
 
   voice.current ??= new LiveVoice({
-    onToolCall: (fc) => runTool(game, fc),
+    onToolCall: async (fc) => {
+      const r = await runTool(game, fc)
+      // A spoken "speak Swedish" must survive a reconnect too, so refresh the stored instruction.
+      if (fc.name === 'change_settings' && (r as { changed?: { language?: string } }).changed?.language)
+        voice.current?.updateInstruction(systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language))
+      return r
+    },
     onTranscript: (who, t) => game.addTranscript(who, t),
     onTurnComplete: () => game.endBuddyTurn(),
     onState: (st, detail) => {
@@ -584,7 +590,7 @@ export function App() {
                     />
                   </div>
                 </Group>
-                <Group title="Language" footer="Squarely can talk in many languages. Auto follows whatever language you speak.">
+                <Group title="Language" footer="Squarely sticks to one language. To switch, pick it here or ask out loud: “can you speak Swedish?”">
                   <label className="row">
                     <span className="row-text">Speak</span>
                     <select
@@ -593,11 +599,12 @@ export function App() {
                       onChange={(e) => {
                         game.changeSettings({ language: e.target.value })
                         if (connected) voice.current!.sendEvent(languageNote(e.target.value))
+                        voice.current?.updateInstruction(systemInstruction(game.profile, game.level, game.kidsMode, e.target.value))
                       }}
                     >
                       {LANGUAGES.map((l) => (
                         <option key={l} value={l}>
-                          {l === 'auto' ? 'Auto (follow me)' : l}
+                          {l}
                         </option>
                       ))}
                     </select>

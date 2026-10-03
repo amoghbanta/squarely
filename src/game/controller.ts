@@ -82,9 +82,12 @@ export type Settings = { boardTheme: BoardTheme; pieceStyle: PieceStyle; showTra
 
 const SETTINGS_KEY = 'squarely.settings.v1'
 const loadSettings = (): Settings => {
-  const d: Settings = { boardTheme: 'meadow', pieceStyle: 'friends', showTrace: true, language: 'auto' }
+  const d: Settings = { boardTheme: 'meadow', pieceStyle: 'friends', showTrace: true, language: 'English' }
   try {
-    return { ...d, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>) }
+    const v = { ...d, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>) }
+    // "auto" (follow the player) is gone: Live drifted between languages mid-game. See README, Known issues.
+    if (v.language === 'auto') v.language = 'English'
+    return v
   } catch {
     return d
   }
@@ -764,7 +767,10 @@ export class GameController {
     if (isBoardTheme(args.board_theme)) changed.board_theme = this.settings.boardTheme = args.board_theme
     if (isPieceStyle(args.piece_style)) changed.piece_style = this.settings.pieceStyle = args.piece_style
     if (typeof args.show_agent_trace === 'boolean') changed.show_agent_trace = this.settings.showTrace = args.show_agent_trace
-    if (typeof args.language === 'string' && args.language.trim()) changed.language = this.settings.language = args.language.trim().slice(0, 30)
+    if (typeof args.language === 'string' && args.language.trim() && args.language.trim().toLowerCase() !== 'auto') {
+      changed.language = this.settings.language = args.language.trim().slice(0, 30)
+      changed.language_rule = `Speak only ${changed.language} from now on, until the player explicitly asks for another language.`
+    }
     if (typeof args.kids_mode === 'boolean') changed.kids_mode = this.setKidsMode(args.kids_mode).kids_mode
     if (typeof args.level === 'number') changed.level = this.setLevel(args.level).level
     this.settings = { ...this.settings }
