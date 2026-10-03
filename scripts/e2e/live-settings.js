@@ -19,9 +19,9 @@
   await say('Can you make the board blue and give me animal pieces?', 7000)
   res.theme = g.getSnapshot().settings
   await say('What can I say?', 6000)
-  res.help = !!document.querySelector('.help')
+  res.help = !!document.querySelector('.help-grid')
   await say('Okay close that.', 5000)
-  res.helpClosed = !document.querySelector('.help')
+  res.helpClosed = !document.querySelector('.help-grid')
   await say('I want to play as black this time.', 9000)
   res.black = { kid: g.getSnapshot().kidColor, history: g.chess.history() }
   await say('Turn off kids mode please.', 6000)

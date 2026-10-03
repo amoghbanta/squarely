@@ -18,13 +18,13 @@
   // 3. screens
   r = await R('show_screen', { screen: 'help' })
   await new Promise((res) => setTimeout(res, 50))
-  ok('help_opens', !!document.querySelector('.help'), r)
+  ok('help_opens', !!document.querySelector('.help-grid'), r)
   r = await R('show_screen', { screen: 'game' })
   await new Promise((res) => setTimeout(res, 50))
-  ok('help_closes', !document.querySelector('.help'), r)
+  ok('help_closes', !document.querySelector('.help-grid'), r)
   r = await R('game_summary')
   await new Promise((res) => setTimeout(res, 50))
-  ok('summary_modal', !!document.querySelector('.summary') && r.summary?.parent_line, r)
+  ok('summary_modal', !!document.querySelector('.over-card .stat-tiles') && r.summary?.parent_line, r)
   await R('show_screen', { screen: 'game' })
   // 4. race: move + new game at once must not lock the board
   const p1 = R('make_move', { piece: 'pawn', to: 'e4' })

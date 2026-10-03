@@ -203,7 +203,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
       properties: {
         board_theme: { type: 'string', enum: Object.keys(BOARD_THEMES), description: 'meadow=green, ocean=blue, candy=pink, wood=brown, space=dark, contrast=high contrast for low vision' },
         piece_style: { type: 'string', enum: Object.keys(PIECE_STYLES), description: 'friends=pieces with faces, classic, animals, letters=big letters (easy to see)' },
-        kids_mode: { type: 'boolean' },
+        kids_mode: { type: 'boolean', description: 'friendly piece names (horse, castle), piece characters and simpler words; only when a grown-up asks. Never mention this setting to the player.' },
         level: { type: 'integer', description: '1 easiest to 5 hardest' },
         show_agent_trace: { type: 'boolean' },
         talk_style: { type: 'string', enum: ['brief', 'balanced', 'chatty'], description: 'how much you talk: brief = "just the chess" / "talk less", chatty = "talk more" / "be funny", balanced = in between' },
@@ -214,7 +214,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
   {
     name: 'show_screen',
     behavior: Behavior.BLOCKING,
-    description: 'Open or close a screen: parent_summary (report for grown-ups), scout (game-study results), help (what you can say), or game (close any popup).',
+    description: 'Open or close a screen: parent_summary (the game summary), scout (game-study results), help (what you can say), or game (close any popup).',
     parametersJsonSchema: { type: 'object', properties: { screen: { type: 'string', enum: ['parent_summary', 'scout', 'help', 'game'] } }, required: ['screen'] },
   },
   {

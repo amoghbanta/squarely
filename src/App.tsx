@@ -60,6 +60,18 @@ const RECEIPT: Record<string, string> = {
   stop_puzzle: 'Referee',
 }
 
+/** "What you can say", by topic. Every example is a real command (tapping one says it). */
+const HELP = [
+  { icon: '♞', title: 'Move', examples: ['horse to the middle', 'take his castle with my queen', 'castle'] },
+  { icon: '↩︎', title: 'Oops', examples: ['undo', 'keep going'] },
+  { icon: '👀', title: 'Look around', examples: ["what's attacking me?", 'where is my king?', 'read the board'] },
+  { icon: '🎓', title: 'Learn', examples: ['teach me how the pieces move', 'how does the horse move?', 'was that good?'] },
+  { icon: '🧩', title: 'Puzzles', examples: ['give me a fork puzzle', 'hint', 'another one'] },
+  { icon: '💾', title: 'Your games', examples: ['pause', 'review my last game', 'continue my last game'] },
+  { icon: '🎨', title: 'Looks', examples: ['make the board blue', 'animal pieces', 'big letters'] },
+  { icon: '💬', title: 'Talking', examples: ['talk less', 'be chatty', 'stop listening'] },
+]
+
 const LANGUAGES = ['English', 'Svenska', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', 'Nederlands', 'Polski', 'Türkçe', 'العربية', 'हिन्दी', '中文', '日本語', '한국어']
 
 const PHONE_QUERY = '(max-width: 899px)'
@@ -98,10 +110,8 @@ export function App() {
   }, [])
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
-  const [showGrownUp, setShowGrownUp] = useState(false)
   const [armForget, setArmForget] = useState(false)
   const closeSummary = () => {
-    setShowGrownUp(false)
     game.closePanel()
   }
   const [tab, setTab] = useState<Tab>(() => (game.settings.showTrace ? 'agent' : 'chat'))
@@ -211,7 +221,7 @@ export function App() {
       await start()
       return
     }
-    speakLocal("To wake up my big brain, I need a free Gemini key. Ask a grown-up to paste one in.")
+    speakLocal("To wake up my big brain, I need a free Gemini key. You can add one in settings.")
     setTimeout(() => setApiKey(''), 2500)
   }
   ears.current ??= new BrowserEars({
@@ -782,7 +792,7 @@ export function App() {
               />
             </div>
             <button className="row action" onClick={() => (setYouOpen(false), game.showPanel('parent_summary'))}>
-              Summary for grown-ups
+              Game summary
             </button>
           </Group>
 
@@ -813,8 +823,8 @@ export function App() {
             </div>
           </Group>
 
-          <Group title="Voice" footer="Kids mode uses friendly piece names and characters. Squarely sticks to one language; ask out loud to switch.">
-            <SwitchRow label="Kids mode" checked={s.kidsMode} onChange={setKids} />
+          <Group title="Voice" footer="Friendly names: “horse” and “castle”, pieces with faces and simpler words, great for young players. Squarely sticks to one language; ask out loud to switch.">
+            <SwitchRow label="Friendly names" checked={s.kidsMode} onChange={setKids} />
             <div className="row">
               <span className="row-text">Talk</span>
               <Segmented
@@ -900,114 +910,160 @@ export function App() {
       </div>
 
       {!apiKey && (
-        <Modal title="Bring your Gemini key">
-          <form onSubmit={saveKey} className="stack">
-            <Avatar mood="happy" size={88} className="hero-avatar" />
-            <h2>Hi, I'm Squarely!</h2>
-            <p>I talk with Gemini Live. To wake me up, I need a free Gemini key from Google AI Studio.</p>
-            <a className="studio-cta" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
-              <span className="studio-badge" aria-hidden>✦</span>
-              <span>
-                <strong>Get a free key in Google AI Studio</strong>
-                <span>About a minute with any Google account. No credit card.</span>
-              </span>
-              <span aria-hidden>↗</span>
-            </a>
-            <ol className="studio-steps">
-              <li>Sign in at AI Studio</li>
-              <li>Tap <b>Create API key</b></li>
-              <li>Paste it below</li>
-            </ol>
-            <p className="condense-note">
-              <b>Your free tier goes further here.</b> Before Gemini reads Squarely's memory and Scout notes,{' '}
-              <a href="https://condense.chat" target="_blank" rel="noreferrer">
-                condense.chat
-              </a>{' '}
-              shrinks them, so each call uses fewer of your tokens.
-            </p>
-            <p className="caption">
-              Gemini's free tier is plenty to try Squarely. Your key goes only from this browser to Google; we never see it.
-            </p>
-            <input type="password" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} placeholder="Paste your Gemini API key" aria-label="Gemini API key" />
-            <label className="check">
-              <input type="checkbox" checked={rememberKey} onChange={(e) => setRememberKey(e.target.checked)} /> Remember on this device
+        <Modal title="Welcome to Squarely">
+          <form onSubmit={saveKey} className="welcome">
+            <div className="welcome-hero">
+              <Avatar mood="happy" size={120} />
+            </div>
+            <h2>Meet Squarely</h2>
+            <p className="lead">Your chess buddy. Talk to play, learn the pieces and solve puzzles.</p>
+            <label className="field">
+              <span>Gemini API key</span>
+              <input type="password" value={keyDraft} onChange={(e) => setKeyDraft(e.target.value)} placeholder="Paste your key" autoComplete="off" />
             </label>
-            <button type="submit" className="primary">
+            <button type="submit" className="primary big" disabled={!keyDraft.trim()}>
               Let's play
             </button>
-            <button
-              type="button"
-              className="plain"
-              onClick={() => {
-                localVoice.warm()
-                setApiKey(' ')
-              }}
-            >
-              Play without a key (local voice)
-            </button>
+            <a className="row-link" href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
+              <span className="row-link-icon" aria-hidden>
+                ✦
+              </span>
+              <span>
+                <strong>Get a free key</strong>
+                <small>Google AI Studio · about a minute, no credit card</small>
+              </span>
+              <span aria-hidden>›</span>
+            </a>
+            <div className="welcome-foot">
+              <label className="check">
+                <input type="checkbox" checked={rememberKey} onChange={(e) => setRememberKey(e.target.checked)} /> Remember on this device
+              </label>
+              <button
+                type="button"
+                className="plain"
+                onClick={() => {
+                  localVoice.warm()
+                  setApiKey(' ')
+                }}
+              >
+                Play without a key
+              </button>
+            </div>
+            <p className="fineprint">
+              Your key goes only from this browser to Google. <a href="https://condense.chat" target="_blank" rel="noreferrer">condense.chat</a> shrinks Squarely's notes, so
+              the free tier lasts longer.
+            </p>
           </form>
         </Modal>
       )}
 
       {s.panel === 'summary' && s.summaryLine && (
-        <Modal title={s.over ? 'Game over' : 'For grown-ups'} onClose={closeSummary}>
-          {s.over && !showGrownUp ? (
-            <div className={`over-card ${s.over === 'checkmate_kid_wins' ? 'won' : ''}`}>
-              {s.over === 'checkmate_kid_wins' && <Confetti />}
-              <Avatar mood={s.over === 'checkmate_opponent_wins' ? 'idle' : 'happy'} size={120} />
-              <h2>{s.over === 'checkmate_kid_wins' ? 'You won! Checkmate!' : s.over === 'checkmate_opponent_wins' ? 'Good game!' : "It's a draw!"}</h2>
-              <p>{s.over === 'checkmate_kid_wins' ? 'What a finish. Want to play again?' : 'Want a rematch?'}</p>
-              <button
-                className="primary"
-                onClick={() => {
-                  closeSummary()
-                  void say('new game')
-                }}
-              >
-                Play again
-              </button>
-              <button className="link-btn" onClick={() => setShowGrownUp(true)}>
-                For grown-ups ›
-              </button>
+        <Modal title={s.over ? 'Game over' : 'Game summary'} onClose={closeSummary}>
+          <div className={`over-card ${s.over === 'checkmate_kid_wins' ? 'won' : ''}`}>
+            {s.over === 'checkmate_kid_wins' && <Confetti />}
+            <div className="welcome-hero small">
+              <Avatar mood={s.over === 'checkmate_opponent_wins' ? 'idle' : 'happy'} size={104} />
             </div>
-          ) : (
-            <>
-              <h2>For grown-ups</h2>
-              <p className="summary">{s.summaryLine}</p>
-              <p className="caption">Every fact above was computed by chess.js and Stockfish, not guessed by the AI.</p>
-              <button className="primary" onClick={closeSummary}>
-                Done
-              </button>
-            </>
-          )}
+            <h2>{s.over === 'checkmate_kid_wins' ? 'You won!' : s.over === 'checkmate_opponent_wins' ? 'Good game!' : s.over ? "It's a draw!" : 'This game so far'}</h2>
+            <p className="lead">
+              {s.over === 'checkmate_kid_wins'
+                ? 'Checkmate. What a finish!'
+                : s.over === 'checkmate_opponent_wins'
+                  ? 'Squarely got this one. Rematch?'
+                  : s.over
+                    ? 'Nobody could win this one.'
+                    : 'Here is how it is going.'}
+            </p>
+            {s.summary && (
+              <div className="stat-tiles">
+                <div>
+                  <b>{Math.max(1, s.summary.moves)}</b>
+                  <span>your moves</span>
+                </div>
+                <div>
+                  <b>{s.summary.bestMove ?? '–'}</b>
+                  <span>best move</span>
+                </div>
+                <div>
+                  <b>
+                    {s.summary.wins}/{s.summary.games}
+                  </b>
+                  <span>games won</span>
+                </div>
+              </div>
+            )}
+            {s.summary && (s.summary.practised.length > 0 || s.summary.fixedAfterHint > 0) && (
+              <p className="summary-note">
+                {s.summary.practised.length > 0 && <>Practised spotting {s.summary.practised.map((m) => m.replace(/_/g, ' ')).join(', ')}. </>}
+                {s.summary.fixedAfterHint > 0 && <>Found a better move after a hint {s.summary.fixedAfterHint === 1 ? 'once' : `${s.summary.fixedAfterHint} times`}.</>}
+              </p>
+            )}
+            <div className="stack-buttons">
+              {s.over ? (
+                <>
+                  <button
+                    className="primary big"
+                    onClick={() => {
+                      closeSummary()
+                      void act('new_game', {}, 'Play again')
+                    }}
+                  >
+                    Play again
+                  </button>
+                  <button
+                    className="secondary"
+                    onClick={() => {
+                      closeSummary()
+                      void act('open_game', { action: 'review', which: s.gameId }, 'Review this game')
+                    }}
+                  >
+                    Review this game
+                  </button>
+                </>
+              ) : (
+                <button className="primary big" onClick={closeSummary}>
+                  Back to the game
+                </button>
+              )}
+            </div>
+            <p className="fineprint">Every number here comes from chess.js and Stockfish, not from the AI.</p>
+          </div>
+          <button className="card-close" onClick={closeSummary} aria-label="Close">
+            ✕
+          </button>
         </Modal>
       )}
 
       {s.panel === 'help' && (
         <Modal title="What you can say" onClose={game.closePanel}>
-          <h2>Just say it</h2>
-          <ul className="help">
-            <li>
-              <b>Move</b>"horse to the middle", "take his castle with my queen", "pawn in front of my king, two steps", "castle"
-            </li>
-            <li>
-              <b>Oops</b>"undo", "keep it"
-            </li>
-            <li>
-              <b>Look around</b>"what's attacking me?", "where is my king?", "read the board", "what did you just move?"
-            </li>
-            <li>
-              <b>Change things</b>"make the board blue", "animal pieces", "big letters", "turn off kids mode", "make it harder"
-            </li>
-            <li>
-              <b>Games</b>"new game", "let me play black", "my chess.com username is …"
-            </li>
-            <li>
-              <b>Grown-ups</b>"show the parent summary", "show the agent trace", "forget me", "stop listening"
-            </li>
-          </ul>
-          <button className="primary" onClick={game.closePanel}>
-            Got it
+          <div className="help-head">
+            <h2>Just say it</h2>
+            <p className="lead">Tap any example to try it.</p>
+          </div>
+          <div className="help-grid">
+            {HELP.map((h) => (
+              <section key={h.title} className="help-card">
+                <h3>
+                  <span aria-hidden>{h.icon}</span> {h.title}
+                </h3>
+                <div className="help-examples">
+                  {h.examples.map((ex) => (
+                    <button
+                      key={ex}
+                      onClick={() => {
+                        game.closePanel()
+                        void say(ex)
+                      }}
+                    >
+                      “{ex}”
+                    </button>
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
+          <button className="card-close" onClick={game.closePanel} aria-label="Close">
+            ✕
           </button>
         </Modal>
       )}

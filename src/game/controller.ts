@@ -83,6 +83,7 @@ export type GameSnapshot = {
   settings: Settings
   panel: Panel
   summaryLine: string | null
+  summary: SummaryStats | null
   micOffSeq: number
   marks: Marks
   mood: BuddyMood
@@ -94,6 +95,18 @@ export type GameSnapshot = {
   paused: boolean
   savedGames: SavedGame[]
   gameId: string
+}
+
+/** Numbers for the game summary card. */
+export type SummaryStats = {
+  result: string
+  moves: number
+  mistakes: number
+  fixedAfterHint: number
+  bestMove: string | null
+  practised: string[]
+  wins: number
+  games: number
 }
 
 /** A saved game being replayed move by move. */
@@ -165,9 +178,10 @@ const HINT_COOLDOWN_KID_MOVES = 3
 const KIDS_KEY = 'squarely.kidsMode'
 const readKidsMode = () => {
   try {
-    return localStorage.getItem(KIDS_KEY) !== '0'
+    // Off unless a grown-up turned it on in settings.
+    return localStorage.getItem(KIDS_KEY) === '1'
   } catch {
-    return true
+    return false
   }
 }
 
@@ -199,6 +213,7 @@ export class GameController {
   private marks: Marks = { squares: [], arrows: [] }
   private mood: BuddyMood = null
   summaryLine: string | null = null
+  private summaryStats: SummaryStats | null = null
   private scoutReport: ScoutReport | null = null
   private scouting = false
   private scoutProgress = ''
@@ -256,6 +271,7 @@ export class GameController {
       settings: this.settings,
       panel: this.panel,
       summaryLine: this.summaryLine,
+      summary: this.summaryStats,
       micOffSeq: this.micOffSeq,
       marks: this.marks,
       moves: this.chess.history({ verbose: true }).map((m, i) => ({ ply: i, san: m.san, color: m.color, to: m.to, grade: this.grades[i] ?? null })),
@@ -1556,7 +1572,7 @@ export class GameController {
     const best = [...this.kidMoves].sort((a, b) => b.wpAfter - b.wpBefore - (a.wpAfter - a.wpBefore))[0]
     const p = this.profile
     const summary = {
-      name: p.name ?? 'Your child',
+      name: p.name ?? 'You',
       moves_played: this.kidMoves.length,
       result: this.overReason() ?? 'in_progress',
       mistakes_this_game: blunders.length,
@@ -1570,9 +1586,9 @@ export class GameController {
       summary.result === 'checkmate_kid_wins'
         ? 'won by checkmate'
         : summary.result === 'checkmate_opponent_wins'
-          ? 'lost to the buddy this time'
+          ? 'lost to Squarely this time'
           : summary.result === 'in_progress'
-            ? 'is in the middle of a game'
+            ? p.name ? 'is in the middle of a game' : 'are in the middle of a game'
             : 'drew'
     const n = summary.moves_played
     const parts = [
@@ -1586,6 +1602,16 @@ export class GameController {
     const line = parts.filter(Boolean).join(' ')
     this.profile = { ...p, lastSummary: line }
     saveProfile(this.profile)
+    this.summaryStats = {
+      result: summary.result,
+      moves: n,
+      mistakes: blunders.length,
+      fixedAfterHint: fixed,
+      bestMove: summary.best_move,
+      practised: motifs,
+      wins: p.wins,
+      games: p.gamesPlayed,
+    }
     this.log('Memory', 'game_summary', line)
     return { ...summary, parent_line: line }
   }
