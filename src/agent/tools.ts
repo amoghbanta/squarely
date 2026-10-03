@@ -77,6 +77,17 @@ export const toolDeclarations: FunctionDeclaration[] = [
     parametersJsonSchema: { type: 'object', properties: { level: { type: 'integer' } }, required: ['level'] },
   },
   {
+    name: 'scout_games',
+    behavior: Behavior.NON_BLOCKING,
+    description:
+      'Scout: in the background, fetch the child\'s recent chess.com games, review every move with the engine, find their recurring mistakes and write a practice plan. Takes about a minute; keep playing and chatting while it works. Call when the child or a grown-up gives a chess.com username.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { username: { type: 'string', description: 'chess.com username, spelled as given' } },
+      required: ['username'],
+    },
+  },
+  {
     name: 'new_game',
     behavior: Behavior.BLOCKING,
     description: 'Start a new game.',
@@ -113,6 +124,9 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       break
     case 'set_level':
       result = game.setLevel(Number(args.level ?? 2))
+      break
+    case 'scout_games':
+      result = await game.scout({ site: 'chesscom', username: String(args.username ?? '') })
       break
     case 'new_game':
       result = game.newGame()

@@ -96,6 +96,10 @@ export class StockfishEngine {
       return { lines, depth: reached }
     })
   }
+
+  dispose() {
+    this.worker.terminate()
+  }
 }
 
 let shared: StockfishEngine | null = null

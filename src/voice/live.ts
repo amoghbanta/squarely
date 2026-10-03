@@ -1,6 +1,7 @@
 // Gemini Live voice layer: mic (16 kHz PCM) -> Live model -> function calls -> spoken audio (24 kHz PCM).
 // The visitor brings their own API key; it goes straight from this browser to Google.
 import {
+  FunctionResponseScheduling,
   GoogleGenAI,
   Modality,
   type FunctionCall,
@@ -10,6 +11,9 @@ import {
 } from '@google/genai'
 
 export const LIVE_MODEL = 'gemini-3.8-live'
+
+/** Tools declared NON_BLOCKING: the model keeps talking while they run. */
+export const ASYNC_TOOLS = new Set(['scout_games'])
 
 export type LiveState = 'idle' | 'connecting' | 'live' | 'error' | 'closed'
 
@@ -91,17 +95,19 @@ export class LiveVoice {
     if (m.sessionResumptionUpdate?.resumable && m.sessionResumptionUpdate.newHandle) {
       this.resumeHandle = m.sessionResumptionUpdate.newHandle
     }
-    if (m.toolCall?.functionCalls?.length) {
-      const functionResponses = await Promise.all(
-        m.toolCall.functionCalls.map(async (fc) => {
-          try {
-            return { id: fc.id, name: fc.name, response: await this.handlers.onToolCall(fc) }
-          } catch (err) {
-            return { id: fc.id, name: fc.name, response: { error: String(err) } }
-          }
-        }),
-      )
-      this.session?.sendToolResponse({ functionResponses })
+    // Each call is answered as soon as it finishes: slow background tools (the Scout) must not
+    // hold up fast board tools. Async tools come back WHEN_IDLE so the buddy isn't cut off.
+    for (const fc of m.toolCall?.functionCalls ?? []) {
+      void (async () => {
+        let response: Record<string, unknown>
+        try {
+          response = await this.handlers.onToolCall(fc)
+        } catch (err) {
+          response = { error: String(err) }
+        }
+        const scheduling = ASYNC_TOOLS.has(fc.name ?? '') ? FunctionResponseScheduling.WHEN_IDLE : undefined
+        this.session?.sendToolResponse({ functionResponses: [{ id: fc.id, name: fc.name, response, scheduling }] })
+      })()
     }
   }
 

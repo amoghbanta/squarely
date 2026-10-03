@@ -9,6 +9,7 @@ export type Profile = {
   mistakes: Record<string, number> // e.g. { fork: 2, hanging_piece: 3 }
   notes: string[] // short facts the kid shared ("likes horses")
   lastSummary: string | null
+  scout: { username: string; at: number; headline: string; focus: string; tips: string[] } | null
 }
 
 const KEY = 'pawnpal.profile.v1'
@@ -22,6 +23,7 @@ const empty = (): Profile => ({
   mistakes: {},
   notes: [],
   lastSummary: null,
+  scout: null,
 })
 
 export function loadProfile(): Profile {

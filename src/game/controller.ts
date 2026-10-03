@@ -11,15 +11,16 @@ import {
   kingSquare,
   material,
   other,
-  pieces,
   threatsAgainst,
   whereIs,
   winProb,
 } from '../chess/facts'
 import { resolveMove, type MoveIntent, type MoveOption } from '../chess/resolver'
+import { classifyPunishment, type Punishment } from '../chess/motifs'
 import { loadProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
+import { runScout, type ScoutReport, type ScoutSource } from '../scout/scout'
 
-export type Role = 'Voice' | 'Referee' | 'Opponent' | 'Tutor' | 'Memory' | 'Board'
+export type Role = 'Voice' | 'Referee' | 'Opponent' | 'Tutor' | 'Memory' | 'Board' | 'Scout'
 
 export type TraceEntry = {
   id: number
@@ -51,6 +52,8 @@ export type GameSnapshot = {
   announce: string
   profile: Profile
   level: number
+  scoutReport: ScoutReport | null
+  scouting: boolean
   pendingOptions: MoveOption[] | null
   checkSquare: Square | null
 }
@@ -62,6 +65,9 @@ export class GameController {
   kidColor: Color = 'w'
   level = 2 // 1 (gentle) .. 5 (tough)
   profile: Profile = loadProfile()
+  apiKey: string | null = null
+  private scoutReport: ScoutReport | null = null
+  private scouting = false
   private pending: MoveOption[] | null = null
   private lastMove: { from: Square; to: Square } | null = null
   private trace: TraceEntry[] = []
@@ -105,6 +111,8 @@ export class GameController {
       announce: this.announce,
       profile: this.profile,
       level: this.level,
+      scoutReport: this.scoutReport,
+      scouting: this.scouting,
       pendingOptions: this.pending,
       checkSquare: c.inCheck() ? kingSquare(c, c.turn()) : null,
     }
@@ -252,41 +260,9 @@ export class GameController {
   }
 
   /** What the opponent's best reply would do to the kid after a blunder (engine + chess.js facts). */
-  private async punishment(): Promise<{ motif: string | null; hintFacts: Record<string, unknown> | null }> {
+  private async punishment(): Promise<Punishment> {
     const res = await getEngine().analyse(this.chess.fen(), { depth: 10 })
-    const best = res.lines[0]
-    if (!best) return { motif: null, hintFacts: null }
-    const copy = new Chess(this.chess.fen())
-    const m = copy.move({ from: best.move.slice(0, 2), to: best.move.slice(2, 4), promotion: best.move[4] })
-    const attacker = { piece: KID_NAME[m.piece], where: whereIs(m.from, this.kidColor) }
-    if (best.mate !== null && best.mate > 0) {
-      return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', attacker } }
-    }
-    // Fork: the moved enemy piece attacks two or more of the kid's non-pawn pieces (king included).
-    const victims = pieces(copy, this.kidColor)
-      .filter((sq) => copy.get(sq)!.type !== 'p' && copy.attackers(sq, other(this.kidColor)).includes(m.to))
-      .map((sq) => copy.get(sq)!.type)
-    if (victims.length >= 2) {
-      return {
-        motif: 'fork',
-        hintFacts: { kind: 'fork: one enemy piece could attack two of yours at once', attacker, targets: victims.map((v) => KID_NAME[v]) },
-      }
-    }
-    if (m.captured) {
-      return {
-        motif: 'hanging_piece',
-        hintFacts: { kind: 'one of your pieces can be taken for free', victim: { piece: KID_NAME[m.captured], where: whereIs(m.to, this.kidColor) }, attacker },
-      }
-    }
-    // Otherwise: name the most valuable kid piece the reply puts in danger.
-    const victim = threatsAgainst(copy, this.kidColor).find((t) => t.hanging || t.attackers.some((a) => a.square === m.to))
-    if (victim) {
-      return {
-        motif: 'piece_in_danger',
-        hintFacts: { kind: 'one of your pieces will be in danger', victim: { piece: victim.victim.name, where: victim.victim.where }, attacker },
-      }
-    }
-    return { motif: 'loses_material', hintFacts: { kind: 'the opponent has a strong reply', attacker } }
+    return classifyPunishment(this.chess.fen(), res.lines[0], this.kidColor)
   }
 
   // ---------- Opponent ----------
@@ -405,7 +381,7 @@ export class GameController {
 
   memorySummary() {
     const p = this.profile
-    return { name: p.name, games_played: p.gamesPlayed, wins: p.wins, recurring_mistakes: topMistakes(p), notes: p.notes }
+    return { name: p.name, games_played: p.gamesPlayed, wins: p.wins, recurring_mistakes: topMistakes(p), notes: p.notes, practice_plan: p.scout?.headline ?? null }
   }
 
   private finishGame() {
@@ -419,6 +395,47 @@ export class GameController {
     this.profile = p
     saveProfile(p)
     this.log('Memory', 'Game recorded', { over })
+  }
+
+  // ---------- Scout (background agent) ----------
+  async scout(source: ScoutSource): Promise<Record<string, unknown>> {
+    if (this.scouting) return { status: 'already_scouting' }
+    this.scouting = true
+    this.emit()
+    const t0 = performance.now()
+    try {
+      const report = await runScout(source, this.apiKey, (title, detail) => this.log('Scout', title, detail))
+      this.scoutReport = report
+      // Memory learns the recurring mistakes, so the Tutor and the next session know them.
+      const mistakes = { ...this.profile.mistakes }
+      for (const [k, v] of Object.entries(report.motifs)) mistakes[k] = (mistakes[k] ?? 0) + v
+      this.profile = {
+        ...this.profile,
+        mistakes,
+        scout: report.plan
+          ? { username: report.username, at: Date.now(), headline: report.plan.headline, focus: report.plan.focus, tips: report.plan.tips }
+          : this.profile.scout,
+      }
+      saveProfile(this.profile)
+      this.log('Memory', 'Scout findings saved', { recurring: topMistakes(this.profile) }, performance.now() - t0)
+      return {
+        status: 'done',
+        games_reviewed: report.games,
+        record: report.record,
+        big_mistakes: report.mistakes,
+        mistake_types: report.motifs,
+        when: report.phases,
+        examples: report.examples.slice(0, 3),
+        plan: report.plan,
+        instruction: 'Tell the child what you found in ONE or TWO short, warm sentences (use plan.buddy_line), then keep playing. Watch for plan.focus during the game.',
+      }
+    } catch (e) {
+      this.log('Scout', 'Failed', String(e))
+      return { status: 'failed', reason: String(e) }
+    } finally {
+      this.scouting = false
+      this.emit()
+    }
   }
 
   // ---------- Parent summary ----------

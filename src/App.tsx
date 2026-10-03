@@ -8,6 +8,7 @@ import { runTool, toolDeclarations } from './agent/tools'
 import { systemInstruction } from './agent/prompt'
 import { parseOffline, phraseOffline } from './agent/offline'
 import { resetProfile } from './memory/store'
+import { ScoutCard } from './ui/ScoutCard'
 
 const KEY_STORE = 'pawnpal.geminiKey'
 const readKey = () => {
@@ -51,6 +52,7 @@ export function App() {
 
   const connected = liveState === 'live'
   const hasKey = apiKey.trim().length > 0
+  game.apiKey = hasKey ? apiKey.trim() : null
 
   const start = useCallback(async () => {
     const v = voice.current!
@@ -225,6 +227,17 @@ export function App() {
               </p>
             ))}
           </div>
+
+          <ScoutCard
+            report={s.scoutReport}
+            scouting={s.scouting}
+            saved={s.profile.scout}
+            onScout={(username) =>
+              connected
+                ? voice.current!.sendText(`My chess.com username is ${username}`)
+                : void runTool(game, { name: 'scout_games', args: { username } }).then((r) => speakLocal(String((r.plan as { buddy_line?: string } | null)?.buddy_line ?? 'I studied your games!')))
+            }
+          />
 
           <div className="footer-actions">
             <button className="ghost" onClick={() => setSummary(game.gameSummary().parent_line)}>
