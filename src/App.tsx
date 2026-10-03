@@ -10,7 +10,7 @@ import { parseOffline, phraseOffline } from './agent/offline'
 import { resetProfile } from './memory/store'
 import { ScoutCard } from './ui/ScoutCard'
 
-const KEY_STORE = 'pawnpal.geminiKey'
+const KEY_STORE = 'squarely.geminiKey'
 const readKey = () => {
   try {
     return sessionStorage.getItem(KEY_STORE) ?? localStorage.getItem(KEY_STORE) ?? ''
@@ -157,7 +157,7 @@ export function App() {
     <div className="app">
       <header>
         <h1>
-          <span aria-hidden>♞</span> Pawnpal
+          <span aria-hidden>♞</span> Squarely
         </h1>
         <p className="tag">{s.kidsMode ? 'The chess friend that never lies to your kid.' : 'The voice chess coach that never makes things up.'}</p>
         <div className="hdr-right">
@@ -200,7 +200,7 @@ export function App() {
               onClick={hasKey ? toggleMic : undefined}
               disabled={!hasKey || liveState === 'connecting'}
               aria-pressed={micOn}
-              aria-label={micOn ? 'Stop listening' : 'Talk to Pawnpal'}
+              aria-label={micOn ? 'Stop listening' : 'Talk to Squarely'}
               style={{ ['--lvl' as string]: String(Math.min(1, level * 4)) }}
             >
               <span aria-hidden>{micOn ? '🎙️' : '🎤'}</span>
@@ -234,7 +234,7 @@ export function App() {
           <div className="transcript" aria-label="Conversation">
             {s.transcript.slice(-6).map((l, i) => (
               <p key={i} className={l.who}>
-                <b>{l.who === 'kid' ? 'You' : 'Pawnpal'}:</b> {l.text}
+                <b>{l.who === 'kid' ? 'You' : 'Squarely'}:</b> {l.text}
               </p>
             ))}
           </div>
@@ -280,7 +280,7 @@ export function App() {
           <form onSubmit={saveKey} className="card">
             <h2 id="keytitle">Bring your Gemini key</h2>
             <p>
-              Pawnpal talks with Gemini Live straight from your browser. Paste a key from{' '}
+              Squarely talks with Gemini Live straight from your browser. Paste a key from{' '}
               <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
                 Google AI Studio
               </a>

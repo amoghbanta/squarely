@@ -6,7 +6,7 @@ import { game } from './game/controller'
 import { runTool } from './agent/tools'
 
 // Dev-only hook so the tool layer can be driven from the console / browser automation.
-if (import.meta.env.DEV) Object.assign(window, { __pawnpal: { game, runTool } })
+if (import.meta.env.DEV) Object.assign(window, { __squarely: { game, runTool } })
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>

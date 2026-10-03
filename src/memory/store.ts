@@ -12,7 +12,7 @@ export type Profile = {
   scout: { username: string; at: number; headline: string; focus: string; tips: string[] } | null
 }
 
-const KEY = 'pawnpal.profile.v1'
+const KEY = 'squarely.profile.v1'
 
 const empty = (): Profile => ({
   name: null,

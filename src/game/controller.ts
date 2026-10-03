@@ -61,7 +61,7 @@ export type GameSnapshot = {
 }
 
 const HINT_COOLDOWN_KID_MOVES = 3
-const KIDS_KEY = 'pawnpal.kidsMode'
+const KIDS_KEY = 'squarely.kidsMode'
 const readKidsMode = () => {
   try {
     return localStorage.getItem(KIDS_KEY) !== '0'
