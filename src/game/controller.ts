@@ -541,7 +541,7 @@ export class GameController {
       mistakes_this_game: blunders.length,
       practised: motifs,
       found_better_move_after_hint: fixed,
-      best_move: best && best.wpAfter - best.wpBefore > 0.03 ? best.san : null,
+      best_move: this.overReason() === 'checkmate_kid_wins' ? (this.kidMoves.at(-1)?.san ?? null) : best && best.wpAfter - best.wpBefore > 0.03 ? best.san : null,
       record: { games: p.gamesPlayed, wins: p.wins, losses: p.losses, draws: p.draws },
       recurring_mistakes: topMistakes(p),
     }
