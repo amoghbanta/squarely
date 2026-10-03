@@ -42,6 +42,8 @@ type KidMoveLog = {
   afterHint: boolean
 }
 
+export type TranscriptLine = { who: 'kid' | 'buddy'; text: string; sources: string[]; done?: boolean }
+
 export type GameSnapshot = {
   fen: string
   lastMove: { from: Square; to: Square } | null
@@ -50,7 +52,7 @@ export type GameSnapshot = {
   over: string | null
   thinking: boolean
   trace: TraceEntry[]
-  transcript: { who: 'kid' | 'buddy'; text: string }[]
+  transcript: TranscriptLine[]
   announce: string
   profile: Profile
   level: number
@@ -112,7 +114,8 @@ export class GameController {
   private pending: MoveOption[] | null = null
   private lastMove: { from: Square; to: Square } | null = null
   private trace: TraceEntry[] = []
-  private transcript: { who: 'kid' | 'buddy'; text: string }[] = []
+  private transcript: TranscriptLine[] = []
+  private queuedSources: { tool: string; at: number }[] = []
   private announce = ''
   private thinking = false
   private kidMoves: KidMoveLog[] = []
@@ -174,12 +177,36 @@ export class GameController {
 
   addTranscript(who: 'kid' | 'buddy', text: string) {
     const last = this.transcript[this.transcript.length - 1]
-    if (last && last.who === who) {
-      this.transcript = [...this.transcript.slice(0, -1), { who, text: last.text + text }]
+    if (last && last.who === who && !last.done) {
+      this.transcript = [...this.transcript.slice(0, -1), { ...last, text: last.text + text }]
     } else {
-      this.transcript = [...this.transcript.slice(-49), { who, text }]
+      // A new buddy line takes the tool results computed since the player spoke: its truth receipts.
+      // A new player line drops stale results (older than 2 s: they answered an earlier turn);
+      // a new buddy line takes what's queued as its truth receipts.
+      if (who === 'kid') this.queuedSources = this.queuedSources.filter((q) => Date.now() - q.at < 2000)
+      const sources = who === 'buddy' ? [...new Set(this.queuedSources.map((q) => q.tool))] : []
+      if (who === 'buddy') this.queuedSources = []
+      this.transcript = [...this.transcript.slice(-49), { who, text, sources }]
     }
     this.emit()
+  }
+
+  /** Record which computed tool result backs what the buddy says next (or is saying now). */
+  noteSource(tool: string) {
+    const last = this.transcript[this.transcript.length - 1]
+    if (last?.who === 'buddy' && !last.done) {
+      if (last.sources.includes(tool)) return
+      this.transcript = [...this.transcript.slice(0, -1), { ...last, sources: [...last.sources, tool] }]
+      this.emit()
+    } else {
+      this.queuedSources.push({ tool, at: Date.now() })
+    }
+  }
+
+  /** The buddy finished a spoken turn: later tool results belong to the next line. */
+  endBuddyTurn() {
+    const last = this.transcript[this.transcript.length - 1]
+    if (last?.who === 'buddy' && !last.done) this.transcript = [...this.transcript.slice(0, -1), { ...last, done: true }]
   }
 
   private say(text: string) {

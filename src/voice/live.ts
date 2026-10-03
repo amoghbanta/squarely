@@ -23,6 +23,7 @@ export type LiveHandlers = {
   onState: (s: LiveState, detail?: string) => void
   onLevel?: (micLevel: number) => void
   onSpeaking?: (speaking: boolean) => void
+  onTurnComplete?: () => void
 }
 
 const b64FromBuffer = (buf: ArrayBuffer) => {
@@ -129,6 +130,7 @@ export class LiveVoice {
     }
     if (sc?.inputTranscription?.text) this.handlers.onTranscript('kid', sc.inputTranscription.text)
     if (sc?.outputTranscription?.text) this.handlers.onTranscript('buddy', sc.outputTranscription.text)
+    if (sc?.turnComplete) this.handlers.onTurnComplete?.()
     if (m.sessionResumptionUpdate?.resumable && m.sessionResumptionUpdate.newHandle) {
       this.resumeHandle = m.sessionResumptionUpdate.newHandle
     }

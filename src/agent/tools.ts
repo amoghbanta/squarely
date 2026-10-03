@@ -184,5 +184,6 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       result = { error: `unknown tool ${call.name}` }
   }
   game.log('Voice', `← ${call.name}`, result, performance.now() - t0)
+  game.noteSource(call.name ?? '')
   return result
 }

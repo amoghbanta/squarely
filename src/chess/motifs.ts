@@ -11,6 +11,7 @@ if (!best) return { motif: null, hintFacts: null }
 const copy = new Chess(fenAfterKidMove)
   const m = copy.move({ from: best.move.slice(0, 2), to: best.move.slice(2, 4), promotion: best.move[4] })
   const attacker = { piece: nameOf(m.piece), where: whereIs(m.from, kidColor) }
+  const reply = { piece: nameOf(m.piece), from_where: whereIs(m.from, kidColor), to_where: whereIs(m.to, kidColor) }
   if (best.mate !== null && best.mate > 0) {
     return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', attacker } }
   }
@@ -30,13 +31,21 @@ const copy = new Chess(fenAfterKidMove)
       hintFacts: { kind: 'one of your pieces can be taken for free', victim: { piece: nameOf(m.captured), where: whereIs(m.to, kidColor) }, attacker },
     }
   }
-  // Otherwise: name the most valuable kid piece the reply puts in danger.
+  // Otherwise: name the most valuable kid piece the reply puts in danger, and who REALLY attacks it.
+  // The reply may be a discovered attack (a pawn moves, a bishop behind it strikes), so the attackers
+  // come from the board after the reply, never from the moved piece.
   const victim = threatsAgainst(copy, kidColor).find((t) => t.hanging || t.attackers.some((a) => a.square === m.to))
   if (victim) {
+    const discovered = !victim.attackers.some((a) => a.square === m.to)
     return {
       motif: 'piece_in_danger',
-      hintFacts: { kind: 'one of your pieces will be in danger', victim: { piece: victim.victim.name, where: victim.victim.where }, attacker },
+      hintFacts: {
+        kind: discovered ? 'one of your pieces will be in danger (a hidden attack: one enemy piece moves out of the way of another)' : 'one of your pieces will be in danger',
+        victim: { piece: victim.victim.name, where: victim.victim.where },
+        attacked_by: victim.attackers.map((a) => ({ piece: a.name, where: a.where })),
+        enemy_move_that_does_it: reply,
+      },
     }
   }
-  return { motif: 'loses_material', hintFacts: { kind: 'the opponent has a strong reply', attacker } }
+  return { motif: 'loses_material', hintFacts: { kind: 'the opponent has a strong reply', enemy_move_that_does_it: reply } }
 }

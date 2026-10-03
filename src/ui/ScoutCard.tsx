@@ -22,13 +22,18 @@ export function ScoutCard({ report, scouting, progress, saved, onScout }: Props)
   const plan = report?.plan ?? (saved ? { headline: saved.headline, focus: saved.focus, tips: saved.tips } : null)
   return (
     <section className="scout" aria-label="Scout: study my past games">
-      <h2>🔭 Scout my games</h2>
+      <h2>Scout</h2>
+      {!report && !scouting && (
+        <p className="small">
+          A second agent studies your recent chess.com games in the background: it reviews every move with the engine, finds your recurring mistakes and writes a practice plan. Or just say "my chess.com username is …".
+        </p>
+      )}
       {!report && (
         <form onSubmit={submit} className="type">
           <label htmlFor="cc" className="sr-only">
             chess.com username
           </label>
-          <input id="cc" value={name} onChange={(e) => setName(e.target.value)} placeholder="chess.com username (or just say it)" />
+          <input id="cc" value={name} onChange={(e) => setName(e.target.value)} placeholder="chess.com username" />
           <button type="submit" disabled={scouting}>
             {scouting ? 'Studying…' : 'Scout'}
           </button>
