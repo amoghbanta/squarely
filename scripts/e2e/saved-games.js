@@ -39,6 +39,14 @@
   r = await R('stop_review')
   ok('review_untouched_saves', listGames().map((g) => g.id + g.moves).join() === before, { before, after: listGames().map((g) => g.id + g.moves) })
   ok('stop_review_back', !game.getSnapshot().review, r)
+  // pausing then starting a puzzle: the puzzle is never blocked, and coming back unpauses
+  await R('new_game', { color: 'white' })
+  await R('make_move', { san: 'e4' })
+  await R('pause_game')
+  r = await R('start_puzzle', { theme: 'fork' })
+  ok('puzzle_not_blocked_by_pause', r.status === 'puzzle_started' && !game.getSnapshot().paused, { r, paused: game.getSnapshot().paused })
+  r = await R('stop_puzzle')
+  ok('back_from_puzzle_unpaused', r.status === 'back_to_game' && !game.getSnapshot().paused, r)
   // the app opening again picks up the unfinished game
   const { GameController } = await import('/src/game/controller.ts')
   const fresh = new GameController()

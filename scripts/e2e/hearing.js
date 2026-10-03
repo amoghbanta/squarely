@@ -70,6 +70,16 @@
   ok('no false cant', !/can't go to e4/.test(JSON.stringify(r)), r)
   await R('new_game', { color: 'white' })
 
+  // "move it to c4" after a not-legal answer uses the piece we were talking about, and the answer is drawn
+  await R('new_game', { color: 'white' })
+  await R('make_move', { san: 'e4' })
+  r = await R('make_move', { piece: 'bishop', to: 'g6', heard: 'bishop to g6' })
+  const drawn = game.getSnapshot().marks.arrows.length
+  r = await R('make_move', { to: 'c4', heard: 'move it to c4' })
+  ok('it_means_last_piece', r.status === 'played' && game.chess.history()[2] === 'Bc4', { r, h: game.chess.history() })
+  ok('not_legal_draws_options', drawn > 0, drawn)
+  await R('new_game', { color: 'white' })
+  // talk style by words
   const { parseOffline } = await import('/src/agent/offline.ts')
   ok('talk_less', parseOffline('can you talk less')?.args?.talk_style === 'brief', parseOffline('can you talk less'))
   r = await R('change_settings', { talk_style: 'chatty' })

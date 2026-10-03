@@ -279,7 +279,8 @@ export class GameController {
       puzzle: this.puzzleView(),
       lesson: this.lessonView(),
       review: this.reviewView(),
-      paused: this.paused,
+      // Pausing belongs to the game: a puzzle, lesson or replay on top of it is never blocked.
+      paused: this.paused && !this.puzzle && !this.lesson && !this.review,
       savedGames: listGames(),
       gameId: this.gameId,
       mood: this.mood,
@@ -418,9 +419,11 @@ export class GameController {
       this.log('Referee', 'Did not catch a move', { heard: intent.heard }, performance.now() - t0)
       return { result: { status: 'did_not_catch', heard: intent.heard, instruction: 'Those words have no move in them. Ask the player to say it again, like "horse to f3". Do not guess a move.' } }
     }
-    const r = resolveMove(this.chess, withHeard(intent), this.pending)
+    const r = resolveMove(this.chess, this.withFocus(withHeard(intent)), this.pending)
     if (r.status === 'ask') {
       this.pending = r.options
+      const froms = [...new Set(r.options.map((o) => o.from))]
+      if (froms.length === 1) this.focusPiece = { type: this.chess.get(froms[0])!.type, from: froms[0] }
       this.point(
         r.options.map((o) => ({ from: o.from, to: o.to, kind: 'option' as const })),
         [...new Set(r.options.map((o) => o.from))].map((sq) => ({ square: sq, kind: 'focus' as const })),
@@ -432,11 +435,32 @@ export class GameController {
     if (r.status === 'illegal') {
       this.log('Referee', 'Rejected: not legal', r.reason, performance.now() - t0)
       this.say(`That move isn't allowed: ${r.reason}.`)
+      // Show where that piece CAN go, so "it can go to f3 or h4" is on the board too.
+      const dests = (r.facts.legalDestinationsForThatPiece ?? []) as { from: Square; to: Square }[]
+      if (dests.length) {
+        if (dests.length <= 8) this.point(dests.map((d) => ({ from: d.from, to: d.to, kind: 'option' as const })), [])
+        else this.point([], [...new Set(dests.map((d) => d.to))].map((sq) => ({ square: sq, kind: 'focus' as const })))
+        const froms = [...new Set(dests.map((d) => d.from))]
+        this.focusPiece = { type: this.chess.get(froms[0])!.type, from: froms.length === 1 ? froms[0] : null }
+      }
       this.emit()
       return { result: { status: 'not_legal', reason: r.reason, facts: r.facts } }
     }
     this.pending = null
+    this.focusPiece = null
     return { ok: r.move }
+  }
+
+  /** The piece we were just talking about ("it can go to f3 or h4"), so "move it to f3" needs no piece name. */
+  private focusPiece: { type: PieceSymbol; from: Square | null } | null = null
+
+  private withFocus(intent: MoveIntent): MoveIntent {
+    const f = this.focusPiece
+    if (!f || intent.piece || intent.from || !intent.to || intent.option || intent.san || intent.castle) return intent
+    const to = intent.to.toLowerCase()
+    const fits = this.chess.moves({ verbose: true }).filter((m) => m.piece === f.type && m.to === to && (!f.from || m.from === f.from))
+    if (!fits.length) return intent
+    return { ...intent, piece: STD_NAME[f.type] as MoveIntent['piece'], from: fits.length === 1 ? fits[0].from : undefined }
   }
 
   private async makeMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
@@ -1369,6 +1393,7 @@ export class GameController {
   private explainPieceInner(sym: PieceSymbol): Record<string, unknown> {
     const how = HOW_IT_MOVES[sym]
     const mine = pieces(this.chess, this.kidColor).filter((sq) => this.chess.get(sq)!.type === sym)
+    if (mine.length) this.focusPiece = { type: sym, from: mine.length === 1 ? mine[0] : null }
     const moves = mine.flatMap((sq) => this.chess.moves({ square: sq, verbose: true }))
     if (moves.length && moves.length <= 8) this.point(moves.map((m) => ({ from: m.from, to: m.to, kind: 'option' as const })), [])
     else if (moves.length) this.point([], [...new Set(moves.map((m) => m.to))].map((sq) => ({ square: sq, kind: 'focus' as const })))
@@ -1431,6 +1456,7 @@ export class GameController {
         this.lastHintAtKidMove = -99
       }
       this.gameRecorded = false
+      this.paused = false
       this.say(g ? 'Back to our game!' : 'New game! You play white.')
       this.log('Referee', g ? 'Back to the game' : 'New game after puzzles')
       // Parked on the buddy's turn with no hint pending (e.g. a game started as black): let it move.
