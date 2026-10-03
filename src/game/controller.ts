@@ -278,6 +278,10 @@ export class GameController {
     const over = this.overReason()
     if (over) {
       this.thinking = false
+      // The finishing move counts too (a checkmate is the best move of the game).
+      const won = over === 'checkmate_kid_wins'
+      this.kidMoves.push({ san: move.san, wpBefore: winProb(cpBefore), wpAfter: won ? 1 : 0.5, blunder: false, motif: null, afterHint: this.hintOpen })
+      this.hintOpen = false
       this.finishGame()
       return { status: 'played', you_played: you, game_over: over }
     }
@@ -541,7 +545,24 @@ export class GameController {
       record: { games: p.gamesPlayed, wins: p.wins, losses: p.losses, draws: p.draws },
       recurring_mistakes: topMistakes(p),
     }
-    const line = `${summary.name} played ${summary.moves_played} move${summary.moves_played === 1 ? '' : 's'}${motifs.length ? `, practised ${motifs.join(' & ').replace(/_/g, ' ')}` : ''}${fixed ? `, fixed ${fixed} mistake${fixed > 1 ? 's' : ''} after a hint` : ''}. Record: won ${p.wins} of ${p.gamesPlayed}.${summary.best_move ? ` Best move: ${summary.best_move}.` : ''}`
+    const result =
+      summary.result === 'checkmate_kid_wins'
+        ? 'won by checkmate'
+        : summary.result === 'checkmate_opponent_wins'
+          ? 'lost to the buddy this time'
+          : summary.result === 'in_progress'
+            ? 'is in the middle of a game'
+            : 'drew'
+    const n = summary.moves_played
+    const parts = [
+      `${summary.name} ${result} after ${n} move${n === 1 ? '' : 's'}.`,
+      motifs.length ? `Practised spotting: ${motifs.join(', ').replace(/_/g, ' ')}.` : '',
+      fixed ? `Found a better move after a hint ${fixed} time${fixed > 1 ? 's' : ''}.` : '',
+      summary.best_move ? `Best move: ${summary.best_move}.` : '',
+      p.gamesPlayed ? `Overall: won ${p.wins} of ${p.gamesPlayed} games.` : '',
+      p.scout ? `Practice focus from their online games: ${p.scout.focus.replace(/_/g, ' ')}.` : '',
+    ]
+    const line = parts.filter(Boolean).join(' ')
     this.profile = { ...p, lastSummary: line }
     saveProfile(this.profile)
     this.log('Memory', 'game_summary', line)
