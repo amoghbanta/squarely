@@ -5,7 +5,8 @@ import { getEngine } from '../engine/stockfish'
 import {
   BLUNDER_WIN_PROB_LOSS,
   CHARACTER,
-  KID_NAME,
+  setKidsModeFacts,
+  nameOf,
   boardListing,
   colorName,
   kingSquare,
@@ -54,11 +55,20 @@ export type GameSnapshot = {
   level: number
   scoutReport: ScoutReport | null
   scouting: boolean
+  kidsMode: boolean
   pendingOptions: MoveOption[] | null
   checkSquare: Square | null
 }
 
 const HINT_COOLDOWN_KID_MOVES = 3
+const KIDS_KEY = 'pawnpal.kidsMode'
+const readKidsMode = () => {
+  try {
+    return localStorage.getItem(KIDS_KEY) !== '0'
+  } catch {
+    return true
+  }
+}
 
 export class GameController {
   chess = new Chess()
@@ -66,6 +76,7 @@ export class GameController {
   level = 2 // 1 (gentle) .. 5 (tough)
   profile: Profile = loadProfile()
   apiKey: string | null = null
+  kidsMode = readKidsMode()
   private scoutReport: ScoutReport | null = null
   private scouting = false
   private pending: MoveOption[] | null = null
@@ -84,6 +95,7 @@ export class GameController {
   private seq = 0
 
   constructor() {
+    setKidsModeFacts(this.kidsMode)
     this.snap = this.buildSnapshot()
   }
 
@@ -112,6 +124,7 @@ export class GameController {
       profile: this.profile,
       level: this.level,
       scoutReport: this.scoutReport,
+      kidsMode: this.kidsMode,
       scouting: this.scouting,
       pendingOptions: this.pending,
       checkSquare: c.inCheck() ? kingSquare(c, c.turn()) : null,
@@ -161,16 +174,17 @@ export class GameController {
 
   private describe(m: Move) {
     return {
-      piece: KID_NAME[m.piece],
-      character: CHARACTER[m.piece],
+      piece: nameOf(m.piece),
+      character: this.kidsMode ? CHARACTER[m.piece] : undefined,
+      san: this.kidsMode ? undefined : m.san,
       from: m.from,
       from_where: whereIs(m.from, this.kidColor),
       to: m.to,
       to_where: whereIs(m.to, this.kidColor),
-      captured: m.captured ? KID_NAME[m.captured] : null,
+      captured: m.captured ? nameOf(m.captured) : null,
       check: this.chess.inCheck(),
       castled: m.flags.includes('k') || m.flags.includes('q'),
-      promoted: m.promotion ? KID_NAME[m.promotion] : null,
+      promoted: m.promotion ? nameOf(m.promotion) : null,
     }
   }
 
@@ -314,6 +328,7 @@ export class GameController {
     const feeling = wp > 0.8 ? 'kid is winning' : wp > 0.6 ? 'kid is a bit ahead' : wp > 0.4 ? 'about equal' : wp > 0.2 ? 'opponent is a bit ahead' : 'opponent is winning'
     const m = material(c)
     const out = {
+      engine_eval_pawns: this.kidsMode ? undefined : Math.round(cp) / 100,
       in_check: c.inCheck() && c.turn() === this.kidColor,
       your_pieces_under_attack: threats,
       enemy_pieces_you_can_win: targets,
@@ -334,7 +349,7 @@ export class GameController {
     } else if (focus === 'last_move') {
       const h = c.history({ verbose: true })
       const m = h[h.length - 1]
-      out = m ? { last_move: { by: m.color === me ? 'you' : 'buddy', piece: KID_NAME[m.piece], from: m.from, to: m.to, captured: m.captured ? KID_NAME[m.captured] : null } } : { last_move: null }
+      out = m ? { last_move: { by: m.color === me ? 'you' : 'buddy', piece: nameOf(m.piece), from: m.from, to: m.to, captured: m.captured ? nameOf(m.captured) : null } } : { last_move: null }
     } else {
       const { yours, theirs } = boardListing(c, me)
       const fmt = (l: typeof yours) => l.map((p) => `${p.name} on ${p.square} (${p.where})`)
@@ -461,6 +476,18 @@ export class GameController {
     saveProfile(this.profile)
     this.log('Memory', 'game_summary', line)
     return { ...summary, parent_line: line }
+  }
+
+  setKidsMode(on: boolean) {
+    this.kidsMode = on
+    setKidsModeFacts(on)
+    try {
+      localStorage.setItem(KIDS_KEY, on ? '1' : '0')
+    } catch {
+      /* best-effort */
+    }
+    this.log('Memory', `Kids mode ${on ? 'on' : 'off'}`)
+    return { status: 'ok', kids_mode: on }
   }
 
   setLevel(level: number) {

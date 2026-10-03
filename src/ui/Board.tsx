@@ -3,9 +3,11 @@ import { Chess, type Color, type Square } from 'chess.js'
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { CHARACTER } from '../chess/facts'
 
+const PLAIN: Record<string, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' }
 const GLYPH: Record<string, string> = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
 
 type Props = {
+  kidsMode: boolean
   fen: string
   pov: Color
   lastMove: { from: Square; to: Square } | null
@@ -20,7 +22,7 @@ const sqAt = (col: number, row: number, pov: Color): Square => {
   return `${'abcdefgh'[file]}${rank + 1}` as Square
 }
 
-export function Board({ fen, pov, lastMove, checkSquare, disabled, onMove }: Props) {
+export function Board({ kidsMode, fen, pov, lastMove, checkSquare, disabled, onMove }: Props) {
   const chess = useMemo(() => new Chess(fen), [fen])
   const [selected, setSelected] = useState<Square | null>(null)
   const [cursor, setCursor] = useState<[number, number]>([4, 6])
@@ -63,7 +65,7 @@ export function Board({ fen, pov, lastMove, checkSquare, disabled, onMove }: Pro
 
   const cursorSq = sqAt(cursor[0], cursor[1], pov)
   const cursorPiece = chess.get(cursorSq)
-  const cursorLabel = `${cursorSq}: ${cursorPiece ? `${cursorPiece.color === pov ? 'your' : "buddy's"} ${CHARACTER[cursorPiece.type]}` : 'empty'}${selected ? `. Selected ${selected}` : ''}`
+  const cursorLabel = `${cursorSq}: ${cursorPiece ? `${cursorPiece.color === pov ? 'your' : "buddy's"} ${kidsMode ? CHARACTER[cursorPiece.type] : PLAIN[cursorPiece.type]}` : 'empty'}${selected ? `. Selected ${selected}` : ''}`
 
   return (
     <svg
@@ -93,15 +95,19 @@ export function Board({ fen, pov, lastMove, checkSquare, disabled, onMove }: Pro
             {targets.has(sq) && (p ? <circle cx="50" cy="50" r="46" className="target-ring" /> : <circle cx="50" cy="50" r="16" className="target" />)}
             {p && (
               <g className={`piece ${p.color === 'w' ? 'pw' : 'pb'}`}>
-                <title>{`${p.color === pov ? 'Your' : "Buddy's"} ${CHARACTER[p.type]}`}</title>
+                <title>{`${p.color === pov ? 'Your' : "Buddy's"} ${kidsMode ? CHARACTER[p.type] : PLAIN[p.type]}`}</title>
                 <text x="50" y="80" textAnchor="middle" className="glyph">
                   {GLYPH[p.type]}
                 </text>
-                {/* googly eyes */}
+                {/* googly eyes (kids mode) */}
+                {kidsMode && (
+                  <>
                 <circle cx="41" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
                 <circle cx="59" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
                 <circle cx="42.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
                 <circle cx="60.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
+                  </>
+                )}
               </g>
             )}
             {col === 0 && <text x="5" y="20" className="coord">{sq[1]}</text>}

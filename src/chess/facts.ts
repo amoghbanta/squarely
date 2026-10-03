@@ -4,7 +4,7 @@ import { Chess, type Color, type PieceSymbol, type Square, SQUARES } from 'chess
 export const VALUE: Record<PieceSymbol, number> = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 100 }
 
 /** Kid-friendly names. The model is told to use these, not notation. */
-export const KID_NAME: Record<PieceSymbol, string> = {
+const KID_NAME: Record<PieceSymbol, string> = {
   p: 'pawn',
   n: 'horse (knight)',
   b: 'bishop',
@@ -12,6 +12,15 @@ export const KID_NAME: Record<PieceSymbol, string> = {
   q: 'queen',
   k: 'king',
 }
+
+const STD_NAME: Record<PieceSymbol, string> = { p: 'pawn', n: 'knight', b: 'bishop', r: 'rook', q: 'queen', k: 'king' }
+
+// Kids mode: friendly names, characters with faces, no notation. Off: plain chess vocabulary.
+let kidsMode = true
+export const setKidsModeFacts = (on: boolean) => {
+  kidsMode = on
+}
+export const nameOf = (t: PieceSymbol) => (kidsMode ? KID_NAME : STD_NAME)[t]
 
 export const CHARACTER: Record<PieceSymbol, string> = {
   p: 'Pip the Pawn',
@@ -41,7 +50,7 @@ export type PieceRef = { square: Square; type: PieceSymbol; color: Color; name: 
 
 const ref = (chess: Chess, sq: Square, pov: Color): PieceRef => {
   const p = chess.get(sq)!
-  return { square: sq, type: p.type, color: p.color, name: KID_NAME[p.type], where: whereIs(sq, pov) }
+  return { square: sq, type: p.type, color: p.color, name: nameOf(p.type), where: whereIs(sq, pov) }
 }
 
 export function pieces(chess: Chess, color: Color): Square[] {

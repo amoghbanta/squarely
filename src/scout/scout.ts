@@ -112,6 +112,8 @@ export async function runScout(source: ScoutSource, apiKey: string | null, step:
     history.forEach((m, i) => {
       if (m.color !== kid) return
       movesReviewed++
+      // A move that ends the game (mate/stalemate) has no reply to judge it by.
+      if (m.san.endsWith('#') || !evals[i + 1].best) return
       const before = winProb(evals[i].kidCp)
       const after = winProb(evals[i + 1].kidCp)
       if (before - after < BLUNDER_WIN_PROB_LOSS || after > 0.85) return
@@ -138,7 +140,7 @@ export async function runScout(source: ScoutSource, apiKey: string | null, step:
     try {
       const ai = new GoogleGenAI({ apiKey })
       const facts = { record, movesReviewed, mistakes, motifs, phases, examples }
-      const r = await ai.models.generateContent({
+      const ask = () => ai.models.generateContent({
         model: BRAIN_MODEL,
         contents: `FACTS (computed by a chess engine, the only truth you may use):\n${JSON.stringify(facts)}`,
         config: {
@@ -158,6 +160,8 @@ export async function runScout(source: ScoutSource, apiKey: string | null, step:
           },
         },
       })
+      // One retry: a transient failure shouldn't cost the kid their plan.
+      const r = await ask().catch(() => ask())
       report.plan = JSON.parse(r.text ?? 'null')
       step('Coach plan written', { model: BRAIN_MODEL, focus: report.plan?.focus })
     } catch (e) {

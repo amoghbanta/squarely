@@ -1,7 +1,7 @@
 // Referee: turns a structured kid intent ("horse to the middle") into exactly one LEGAL move,
 // or a clarifying question, or a fact-based reason it can't be played. Never guesses.
 import { Chess, type Move, type PieceSymbol, type Square } from 'chess.js'
-import { KID_NAME, kingSquare, whereIs } from './facts'
+import { nameOf, kingSquare, whereIs } from './facts'
 
 export type PieceWord = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king'
 
@@ -80,7 +80,7 @@ export function resolveMove(chess: Chess, intent: MoveIntent, pending: MoveOptio
   // Several legal moves fit: ask, describing them by piece position, not notation.
   const options = cands.slice(0, 4).map((m) => ({ label: describeMove(m, me), san: m.san }))
   const sameDest = new Set(cands.map((m) => m.to)).size === 1
-  const name = KID_NAME[cands[0].piece]
+  const name = nameOf(cands[0].piece)
   const question = sameDest
     ? `Two of your pieces can go there. Which ${name}?`
     : new Set(cands.map((m) => m.from)).size === 1
@@ -108,8 +108,8 @@ function narrowByWhich(chess: Chess, cands: Move[], which?: MoveIntent['which'])
 }
 
 function describeMove(m: Move, pov: 'w' | 'b'): string {
-  const name = KID_NAME[m.piece]
-  const take = m.captured ? `, taking the ${KID_NAME[m.captured]}` : ''
+  const name = nameOf(m.piece)
+  const take = m.captured ? `, taking the ${nameOf(m.captured)}` : ''
   return `${name} from ${m.from} (${whereIs(m.from, pov)}) to ${m.to} (${whereIs(m.to, pov)})${take}`
 }
 
@@ -118,12 +118,12 @@ function explainIllegal(chess: Chess, intent: MoveIntent, legal: Move[]): Resolu
   if (chess.inCheck()) facts.note = 'king is in check, the move must get the king safe'
   if (intent.piece) {
     const own = legal.filter((m) => m.piece === SYM[intent.piece!])
-    facts.piece = KID_NAME[SYM[intent.piece]]
+    facts.piece = nameOf(SYM[intent.piece])
     facts.legalDestinationsForThatPiece = own.map((m) => ({ from: m.from, to: m.to, where: whereIs(m.to, chess.turn()) }))
     if (!own.length) return { status: 'illegal', reason: `that ${facts.piece} cannot move right now`, facts }
   }
   if (intent.capture) {
-    facts.captureTargets = legal.filter((m) => m.captured).map((m) => ({ piece: KID_NAME[m.piece], takes: KID_NAME[m.captured!], on: m.to }))
+    facts.captureTargets = legal.filter((m) => m.captured).map((m) => ({ piece: nameOf(m.piece), takes: nameOf(m.captured!), on: m.to }))
   }
   return { status: 'illegal', reason: 'no legal move matches', facts }
 }

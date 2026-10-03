@@ -5,7 +5,7 @@ import { Board } from './ui/Board'
 import { TracePanel } from './ui/TracePanel'
 import { LiveVoice, LIVE_MODEL, type LiveState } from './voice/live'
 import { runTool, toolDeclarations } from './agent/tools'
-import { systemInstruction } from './agent/prompt'
+import { modeSwitchNote, systemInstruction } from './agent/prompt'
 import { parseOffline, phraseOffline } from './agent/offline'
 import { resetProfile } from './memory/store'
 import { ScoutCard } from './ui/ScoutCard'
@@ -57,7 +57,7 @@ export function App() {
   const start = useCallback(async () => {
     const v = voice.current!
     try {
-      if (!v.connected) await v.connect(apiKey, systemInstruction(game.profile, game.level), toolDeclarations)
+      if (!v.connected) await v.connect(apiKey, systemInstruction(game.profile, game.level, game.kidsMode), toolDeclarations)
       await v.startMic()
       setMicOn(true)
       v.sendText(game.profile.name ? `(${game.profile.name} is back. Greet them by name.)` : '(A new kid arrived. Say hi and ask their name.)')
@@ -159,9 +159,20 @@ export function App() {
         <h1>
           <span aria-hidden>♞</span> Pawnpal
         </h1>
-        <p className="tag">The chess friend that never lies to your kid.</p>
+        <p className="tag">{s.kidsMode ? 'The chess friend that never lies to your kid.' : 'The voice chess coach that never makes things up.'}</p>
         <div className="hdr-right">
           {s.profile.name && <span className="hello">Hi, {s.profile.name}!</span>}
+          <label className="switch">
+            <input
+              type="checkbox"
+              checked={s.kidsMode}
+              onChange={(e) => {
+                game.setKidsMode(e.target.checked)
+                if (connected) voice.current!.sendEvent(modeSwitchNote(e.target.checked))
+              }}
+            />{' '}
+            Kids mode
+          </label>
           <label>
             Buddy level
             <select value={s.level} onChange={(e) => game.setLevel(Number(e.target.value))}>
@@ -181,7 +192,7 @@ export function App() {
           <div className="status" aria-hidden>
             {status}
           </div>
-          <Board fen={s.fen} pov={s.kidColor} lastMove={s.lastMove} checkSquare={s.checkSquare} disabled={s.thinking || !!s.over} onMove={onBoardMove} />
+          <Board kidsMode={s.kidsMode} fen={s.fen} pov={s.kidColor} lastMove={s.lastMove} checkSquare={s.checkSquare} disabled={s.thinking || !!s.over} onMove={onBoardMove} />
 
           <div className="controls">
             <button

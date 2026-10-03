@@ -2,7 +2,7 @@
 // Used live by the Tutor and offline by the Scout over imported games.
 import { Chess, type Color } from 'chess.js'
 import type { EngineLine } from '../engine/stockfish'
-import { KID_NAME, other, pieces, threatsAgainst, whereIs } from './facts'
+import { nameOf, other, pieces, threatsAgainst, whereIs } from './facts'
 
 export type Punishment = { motif: string | null; hintFacts: Record<string, unknown> | null }
 
@@ -10,7 +10,7 @@ export function classifyPunishment(fenAfterKidMove: string, best: EngineLine | u
 if (!best) return { motif: null, hintFacts: null }
 const copy = new Chess(fenAfterKidMove)
   const m = copy.move({ from: best.move.slice(0, 2), to: best.move.slice(2, 4), promotion: best.move[4] })
-  const attacker = { piece: KID_NAME[m.piece], where: whereIs(m.from, kidColor) }
+  const attacker = { piece: nameOf(m.piece), where: whereIs(m.from, kidColor) }
   if (best.mate !== null && best.mate > 0) {
     return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', attacker } }
   }
@@ -21,13 +21,13 @@ const copy = new Chess(fenAfterKidMove)
   if (victims.length >= 2) {
     return {
       motif: 'fork',
-      hintFacts: { kind: 'fork: one enemy piece could attack two of yours at once', attacker, targets: victims.map((v) => KID_NAME[v]) },
+      hintFacts: { kind: 'fork: one enemy piece could attack two of yours at once', attacker, targets: victims.map((v) => nameOf(v)) },
     }
   }
   if (m.captured) {
     return {
       motif: 'hanging_piece',
-      hintFacts: { kind: 'one of your pieces can be taken for free', victim: { piece: KID_NAME[m.captured], where: whereIs(m.to, kidColor) }, attacker },
+      hintFacts: { kind: 'one of your pieces can be taken for free', victim: { piece: nameOf(m.captured), where: whereIs(m.to, kidColor) }, attacker },
     }
   }
   // Otherwise: name the most valuable kid piece the reply puts in danger.
