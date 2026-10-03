@@ -118,7 +118,7 @@ a { color: var(--tint); }
 /* ---------- board ---------- */
 .board {
   display: block; width: min(100%, 620px, calc(100dvh - 330px)); min-width: 260px; aspect-ratio: 1;
-  border-radius: 16px; box-shadow: var(--shadow); user-select: none; touch-action: manipulation; overflow: hidden;
+  border-radius: 22px; box-shadow: var(--shadow), inset 0 0 0 1px rgba(255,255,255,0.08); user-select: none; touch-action: manipulation; overflow: hidden;
 }
 .board .light { fill: var(--light-sq); }
 .board .dark { fill: var(--dark-sq); }
@@ -129,7 +129,12 @@ a { color: var(--tint); }
 .board .target-ring { fill: none; stroke: rgba(94, 92, 230, 0.7); stroke-width: 6; }
 .board .cursor { fill: none; stroke: var(--tint); stroke-width: 6; rx: 10; }
 .board .sq { cursor: pointer; }
-.board .coord { font: 700 14px var(--font); fill: rgba(0, 0, 0, 0.38); }
+.board .frame { fill: var(--frame); }
+.board .coord { font: 800 34px var(--rounded, var(--font)); fill: rgba(255, 255, 255, 0.82); text-anchor: middle; transition: fill 0.15s; }
+.board .coord.top { opacity: 0.45; font-size: 26px; }
+.board .coord.on { fill: #ffd60a; opacity: 1; }
+.board .sq-name { font: 700 26px var(--font); fill: rgba(0, 0, 0, 0.35); text-anchor: middle; pointer-events: none; }
+.board .sq:hover .light, .board .sq:hover .dark { filter: brightness(1.06); }
 .board .glyph { font-size: 84px; font-family: 'Apple Symbols', 'Segoe UI Symbol', 'Noto Sans Symbols 2', serif; paint-order: stroke; stroke-width: 3px; stroke-linejoin: round; }
 .board .pw .glyph { fill: var(--white-piece); stroke: #2c2540; }
 .board .pb .glyph { fill: var(--black-piece); stroke: #fffaf0; }
@@ -424,3 +429,4 @@ a { color: var(--tint); }
 .studio-steps li { counter-increment: s; }
 .studio-steps li::before { content: counter(s); display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 5px; border-radius: 50%; background: var(--fill, rgba(120,120,128,.16)); font-size: 11px; font-weight: 600; }
 .condense-note { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4; background: var(--fill, rgba(120,120,128,.12)); text-align: left; }
+.cap-kid.heard { opacity: 0.6; font-style: italic; }

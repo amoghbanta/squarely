@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { Square } from 'chess.js'
+import { localVoice, type LocalVoiceStatus } from './voice/localVoice'
 import { game, type TranscriptLine } from './game/controller'
 import { Board } from './ui/Board'
 import { ScoutActivity } from './ui/ScoutActivity'
@@ -15,8 +16,10 @@ import { BOARD_THEMES, PIECE_STYLES, type BoardTheme, type PieceStyle } from './
 import { Group, Segmented, SwitchRow } from './ui/controls'
 import { GearIcon, HelpIcon, KeyboardIcon, MicIcon, MoreIcon, SendIcon } from './ui/icons'
 import { BRAIN_MODEL } from './scout/scout'
+import { BrowserEars, earsSupported } from './voice/browserEars'
 
 const KEY_STORE = 'squarely.geminiKey'
+const WAKE = /\b(wake up|hey|hi|connect( to)?|call|talk to)\b.*\b(squarely|gemini|big brain)\b/i
 const readKey = () => {
   try {
     return sessionStorage.getItem(KEY_STORE) ?? localStorage.getItem(KEY_STORE) ?? ''
@@ -56,18 +59,6 @@ const usePhone = () => {
   return phone
 }
 
-// Chrome loads voices lazily; ask once early so the first offline line gets a nice one.
-try {
-  speechSynthesis.getVoices()
-} catch {
-  /* no TTS */
-}
-const NICE_VOICES = /Google US English|Google UK English Female|Samantha|Ava|Allison|Karen|Moira|Tessa|Serena|\(Premium\)|\(Enhanced\)/
-function pickVoice(): SpeechSynthesisVoice | null {
-  const all = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'))
-  return all.find((v) => /\(Premium\)|\(Enhanced\)/.test(v.name)) ?? all.find((v) => NICE_VOICES.test(v.name)) ?? all.find((v) => v.localService) ?? null
-}
-
 export function App() {
   const s = useSyncExternalStore(game.subscribe, game.getSnapshot)
   const phone = usePhone()
@@ -77,9 +68,19 @@ export function App() {
   const [liveState, setLiveState] = useState<LiveState>('idle')
   const [liveDetail, setLiveDetail] = useState('')
   const [micOn, setMicOn] = useState(false)
+  const [earsOn, setEarsOn] = useState(false)
+  const [heard, setHeard] = useState('')
   const [speaking, setSpeaking] = useState(false)
   const [level, setLevelUi] = useState(0)
   const [outLevel, setOutLevel] = useState(0)
+  const [localTts, setLocalTts] = useState<LocalVoiceStatus>(localVoice.status)
+  useEffect(() => {
+    localVoice.onStatus = setLocalTts
+    localVoice.onLevel = (l) => {
+      setOutLevel(l)
+      setSpeaking(l > 0)
+    }
+  }, [])
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
   const [tab, setTab] = useState<Tab>('coach')
@@ -133,22 +134,11 @@ export function App() {
     }
   }
 
-  // Offline only (no key): the browser's own speech. The system default is often a harsh robot
-  // voice, so prefer the warmest English voice the device has.
+  // Offline only (no key): Kokoro-82M running in this browser (system voice while it downloads).
   const speakLocal = (line: string) => {
     game.addTranscript('buddy', line)
     game.endBuddyTurn()
-    try {
-      speechSynthesis.cancel()
-      const u = new SpeechSynthesisUtterance(line)
-      const voice = pickVoice()
-      if (voice) u.voice = voice
-      u.rate = 1.02
-      u.pitch = 1.1
-      speechSynthesis.speak(u)
-    } catch {
-      /* no TTS available */
-    }
+    localVoice.speak(line)
   }
 
   /** With a key, typing wakes Gemini Live (no mic needed) instead of falling back to the robot voice. */
@@ -173,6 +163,50 @@ export function App() {
     const r = await runTool(game, call)
     speakLocal(phraseOffline(call.name!, r))
   }
+
+  // Without Gemini: the browser hears the player (Web Speech API) and the offline parser plays.
+  // "Wake up Squarely" / "connect to Gemini" hands over to Gemini Live, or asks for a key.
+  const ears = useRef<BrowserEars | null>(null)
+  const wake = async () => {
+    ears.current?.stop()
+    if (hasKey) {
+      await start()
+      return
+    }
+    speakLocal("To wake up my big brain, I need a free Gemini key. Ask a grown-up to paste one in.")
+    setTimeout(() => setApiKey(''), 2500)
+  }
+  ears.current ??= new BrowserEars({
+    onPhrase: (t) => {
+      setHeard('')
+      if (WAKE.test(t)) return void wakeRef.current()
+      void sayRef.current(t)
+    },
+    onHeard: setHeard,
+    onState: (on, err) => {
+      setEarsOn(on)
+      setHeard('')
+      if (err === 'not-allowed') game.log('Voice', 'Microphone blocked by the browser')
+    },
+    muted: () => localVoice.busy,
+  })
+  const sayRef = useRef(say)
+  const wakeRef = useRef(wake)
+  useEffect(() => {
+    sayRef.current = say
+    wakeRef.current = wake
+  })
+  const toggleEars = () => {
+    const e = ears.current!
+    if (e.on) return e.stop()
+    localVoice.warm()
+    e.start()
+    if (!game.getSnapshot().transcript.length) speakLocal('Hi! I can hear you now. Say a move, like "horse to the middle". Say "wake up Squarely" for my big brain.')
+  }
+  // Live takes the mic: browser ears switch off when Gemini starts listening.
+  useEffect(() => {
+    if (micOn) ears.current?.stop()
+  }, [micOn])
 
   const submitText = (e: FormEvent) => {
     e.preventDefault()
@@ -311,7 +345,7 @@ export function App() {
         : "Squarely's move"
 
   const micLabel =
-    liveState === 'connecting' ? 'Connecting…' : micOn ? (speaking ? 'Squarely is talking' : 'Listening') : connected ? 'Tap to talk' : hasKey ? 'Start talking' : 'Type to play'
+    liveState === 'connecting' ? 'Connecting…' : micOn ? (speaking ? 'Squarely is talking' : 'Listening') : connected ? 'Tap to talk' : hasKey ? 'Start talking' : earsOn ? (speaking ? 'Squarely is talking' : 'Listening') : earsSupported ? 'Tap to talk' : 'Type to play'
 
   const mood: Mood =
     liveState === 'connecting'
@@ -384,14 +418,14 @@ export function App() {
           />
 
           <div className="captions" aria-hidden>
-            {lastKid && <p className="cap-kid">{lastKid.text}</p>}
+            {heard ? <p className="cap-kid heard">{heard}…</p> : lastKid && <p className="cap-kid">{lastKid.text}</p>}
             {lastBuddy ? (
               <p className="cap-buddy">
                 {lastBuddy.text}
                 <Receipts sources={lastBuddy.sources} />
               </p>
             ) : (
-              <p className="cap-buddy muted">{hasKey ? 'Tap the mic and say hi.' : 'Type a move like "knight f3", or add a Gemini key to talk.'}</p>
+              <p className="cap-buddy muted">{hasKey ? 'Tap the mic and say hi.' : earsSupported ? 'Tap the mic and say a move, like "horse to the middle".' : 'Type a move like "knight f3", or add a Gemini key to talk.'}</p>
             )}
           </div>
 
@@ -441,15 +475,15 @@ export function App() {
                 </button>
                 <div className="mic-wrap">
                   <button
-                    className={`mic ${micOn ? 'on' : ''} ${speaking ? 'speaking' : ''} ${liveState === 'connecting' ? 'connecting' : ''}`}
-                    onClick={hasKey ? toggleMic : () => setTyping(true)}
+                    className={`mic ${micOn || earsOn ? 'on' : ''} ${speaking ? 'speaking' : ''} ${liveState === 'connecting' ? 'connecting' : ''}`}
+                    onClick={hasKey ? toggleMic : earsSupported ? toggleEars : () => setTyping(true)}
                     disabled={liveState === 'connecting'}
-                    aria-pressed={micOn}
-                    aria-label={micOn ? 'Stop listening' : 'Talk to Squarely'}
+                    aria-pressed={micOn || earsOn}
+                    aria-label={micOn || earsOn ? 'Stop listening' : 'Talk to Squarely'}
                     style={{ ['--lvl' as string]: String(Math.min(1, level * 5)) }}
                   >
                     <Avatar mood={mood} level={outLevel} size={84} />
-                    {micOn && (
+                    {(micOn || earsOn) && (
                       <span className="rec" aria-hidden>
                         <MicIcon />
                       </span>
@@ -464,7 +498,13 @@ export function App() {
             )}
           </div>
           <div className="live-state" aria-hidden>
-            {LIVE_MODEL} · {liveState}
+            {hasKey
+              ? `${LIVE_MODEL} · ${liveState}`
+              : localTts.state === 'loading'
+                ? `Downloading local voice (Kokoro) · ${localTts.pct}%`
+                : localTts.state === 'ready'
+                  ? 'Local voice: Kokoro-82M, in your browser'
+                  : 'Local voice: system'}
           </div>
         </section>
 
@@ -663,8 +703,15 @@ export function App() {
             <button type="submit" className="primary">
               Let's play
             </button>
-            <button type="button" className="plain" onClick={() => setApiKey(' ')}>
-              Play without voice
+            <button
+              type="button"
+              className="plain"
+              onClick={() => {
+                localVoice.warm()
+                setApiKey(' ')
+              }}
+            >
+              Play without a key (local voice)
             </button>
           </form>
         </Modal>

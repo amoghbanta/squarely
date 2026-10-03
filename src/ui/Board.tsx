@@ -42,6 +42,7 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
   const [cursor, setCursor] = useState<[number, number]>([4, 6])
   const ref = useRef<SVGSVGElement>(null)
   const [focused, setFocused] = useState(false)
+  const [hover, setHover] = useState<Square | null>(null)
   // A new position (voice move, engine reply, undo) clears any half-made tap selection.
   useEffect(() => setSelected(null), [fen])
 
@@ -89,7 +90,7 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
     <svg
       ref={ref}
       className="board"
-      viewBox="0 0 800 800"
+      viewBox="-56 -56 912 912"
       role="application"
       aria-roledescription="chess board"
       aria-label={`Chess board. Use arrow keys and Enter to move. ${cursorLabel}`}
@@ -97,8 +98,33 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
       onKeyDown={onKey}
       onFocus={() => setFocused(true)}
       onBlur={() => setFocused(false)}
-      style={{ ['--light-sq' as string]: BOARD_THEMES[boardTheme].light, ['--dark-sq' as string]: BOARD_THEMES[boardTheme].dark }}
+      style={{
+        ['--light-sq' as string]: BOARD_THEMES[boardTheme].light,
+        ['--dark-sq' as string]: BOARD_THEMES[boardTheme].dark,
+        ['--frame' as string]: BOARD_THEMES[boardTheme].frame,
+      }}
+      onMouseLeave={() => setHover(null)}
     >
+      {/* Frame with big file letters and rank numbers outside the squares, so they never hide behind a piece.
+          The letter and number of the square you're pointing at light up: "this is e4". */}
+      <rect x="-56" y="-56" width="912" height="912" rx="36" className="frame" />
+      {Array.from({ length: 8 }, (_, i) => {
+        const file = 'abcdefgh'[pov === 'w' ? i : 7 - i]
+        const rank = String(pov === 'w' ? 8 - i : i + 1)
+        const on = hover ?? selected ?? (focused ? cursorSq : null)
+        return (
+          <g key={i} aria-hidden>
+            <text x={i * 100 + 50} y="838" className={`coord${on?.[0] === file ? ' on' : ''}`}>{file}</text>
+            <text x={i * 100 + 50} y="-18" className={`coord top${on?.[0] === file ? ' on' : ''}`}>{file}</text>
+            <text x="-28" y={i * 100 + 61} className={`coord${on?.[1] === rank ? ' on' : ''}`}>{rank}</text>
+            <text x="828" y={i * 100 + 61} className={`coord top${on?.[1] === rank ? ' on' : ''}`}>{rank}</text>
+          </g>
+        )
+      })}
+      <clipPath id="board-clip">
+        <rect width="800" height="800" rx="14" />
+      </clipPath>
+      <g clipPath="url(#board-clip)">
       {Array.from({ length: 64 }, (_, i) => {
         const col = i % 8
         const row = Math.floor(i / 8)
@@ -108,7 +134,7 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
         const isLast = lastMove && (lastMove.from === sq || lastMove.to === sq)
         const isCursor = col === cursor[0] && row === cursor[1]
         return (
-          <g key={sq} transform={`translate(${col * 100} ${row * 100})`} onClick={() => activate(sq)} className="sq">
+          <g key={sq} transform={`translate(${col * 100} ${row * 100})`} onClick={() => activate(sq)} onMouseEnter={() => setHover(sq)} className="sq">
             <rect width="100" height="100" className={dark ? 'dark' : 'light'} />
             {isLast && <rect width="100" height="100" className="last" />}
             {checkSquare === sq && <rect width="100" height="100" className="check" />}
@@ -147,12 +173,12 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
                 )}
               </g>
             )}
-            {col === 0 && <text x="5" y="20" className="coord">{sq[1]}</text>}
-            {row === 7 && <text x="88" y="95" className="coord">{sq[0]}</text>}
+            {hover === sq && !p && <text x="50" y="60" className="sq-name">{sq}</text>}
             {isCursor && <rect x="3" y="3" width="94" height="94" className="cursor" />}
           </g>
         )
       })}
+      </g>
       {/* Squarely points: rings and arrows drawn only from computed tool results */}
       <g className="marks" pointerEvents="none">
         <defs>

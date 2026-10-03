@@ -2,12 +2,12 @@
 import type { PieceSymbol } from 'chess.js'
 
 export const BOARD_THEMES = {
-  meadow: { label: 'Meadow (green)', light: '#ffe7b8', dark: '#8fc9a8' },
-  ocean: { label: 'Ocean (blue)', light: '#e3f2ff', dark: '#5b9bd5' },
-  candy: { label: 'Candy (pink)', light: '#fff0f6', dark: '#e58fb8' },
-  wood: { label: 'Wood (brown)', light: '#f0d9b5', dark: '#b58863' },
-  space: { label: 'Space (dark)', light: '#9aa3c7', dark: '#3b3f6b' },
-  contrast: { label: 'High contrast', light: '#ffffff', dark: '#3a3a3a' },
+  meadow: { label: 'Meadow (green)', light: '#ffe7b8', dark: '#8fc9a8', frame: '#4f7f68' },
+  ocean: { label: 'Ocean (blue)', light: '#e3f2ff', dark: '#5b9bd5', frame: '#2f5f8f' },
+  candy: { label: 'Candy (pink)', light: '#fff0f6', dark: '#e58fb8', frame: '#a8507c' },
+  wood: { label: 'Wood (brown)', light: '#f0d9b5', dark: '#b58863', frame: '#7a5232' },
+  space: { label: 'Space (dark)', light: '#9aa3c7', dark: '#3b3f6b', frame: '#1f2240' },
+  contrast: { label: 'High contrast', light: '#ffffff', dark: '#3a3a3a', frame: '#000000' },
 } as const
 
 export type BoardTheme = keyof typeof BOARD_THEMES
