@@ -56,6 +56,18 @@ const usePhone = () => {
   return phone
 }
 
+// Chrome loads voices lazily; ask once early so the first offline line gets a nice one.
+try {
+  speechSynthesis.getVoices()
+} catch {
+  /* no TTS */
+}
+const NICE_VOICES = /Google US English|Google UK English Female|Samantha|Ava|Allison|Karen|Moira|Tessa|Serena|\(Premium\)|\(Enhanced\)/
+function pickVoice(): SpeechSynthesisVoice | null {
+  const all = speechSynthesis.getVoices().filter((v) => v.lang.startsWith('en'))
+  return all.find((v) => /\(Premium\)|\(Enhanced\)/.test(v.name)) ?? all.find((v) => NICE_VOICES.test(v.name)) ?? all.find((v) => v.localService) ?? null
+}
+
 export function App() {
   const s = useSyncExternalStore(game.subscribe, game.getSnapshot)
   const phone = usePhone()
@@ -121,21 +133,41 @@ export function App() {
     }
   }
 
+  // Offline only (no key): the browser's own speech. The system default is often a harsh robot
+  // voice, so prefer the warmest English voice the device has.
   const speakLocal = (line: string) => {
     game.addTranscript('buddy', line)
     game.endBuddyTurn()
     try {
       speechSynthesis.cancel()
-      speechSynthesis.speak(new SpeechSynthesisUtterance(line))
+      const u = new SpeechSynthesisUtterance(line)
+      const voice = pickVoice()
+      if (voice) u.voice = voice
+      u.rate = 1.02
+      u.pitch = 1.1
+      speechSynthesis.speak(u)
     } catch {
       /* no TTS available */
+    }
+  }
+
+  /** With a key, typing wakes Gemini Live (no mic needed) instead of falling back to the robot voice. */
+  const ensureLive = async () => {
+    const v = voice.current!
+    if (v.connected) return true
+    if (!hasKey) return false
+    try {
+      await v.connect(apiKey, systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language), toolDeclarations)
+      return true
+    } catch {
+      return false
     }
   }
 
   /** One path for typed text and quick-action chips: Live if connected, else the offline parser. */
   const say = async (t: string) => {
     game.addTranscript('kid', t)
-    if (connected) return voice.current!.sendText(t)
+    if (await ensureLive()) return voice.current!.sendText(t)
     const call = parseOffline(t)
     if (!call) return speakLocal('I only know chess words offline. Try "horse to the middle" or "undo".')
     const r = await runTool(game, call)
@@ -153,7 +185,7 @@ export function App() {
   // Tap / keyboard moves go through the same Referee tool, then the voice agent is told what happened.
   const onBoardMove = async (from: Square, to: Square) => {
     const r = await runTool(game, { name: 'make_move', args: { from, to } })
-    if (connected) voice.current!.sendEvent(`[The player moved on the screen. make_move result: ${JSON.stringify(r)}. React per the rules.]`)
+    if (await ensureLive()) voice.current!.sendEvent(`[The player moved on the screen. make_move result: ${JSON.stringify(r)}. React per the rules.]`)
     else speakLocal(phraseOffline('make_move', r))
   }
 
@@ -170,8 +202,11 @@ export function App() {
     if (v.connected) {
       const { instruction: _i, ...facts } = r
       v.sendEvent(`[Scout finished: your teammate Scout agent is done studying the games. Result: ${JSON.stringify(facts)}. Tell the player now in ONE or TWO warm sentences (use plan.buddy_line if present), then get back to the game.]`)
+    } else if (hasKey) {
+      game.addTranscript('buddy', phraseOffline('scout_games', r))
+      game.endBuddyTurn()
     } else speakLocal(phraseOffline('scout_games', r))
-  }, [speaking]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [speaking, hasKey]) // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     game.onScoutDone = (r) => {
       scoutNote.current = r
