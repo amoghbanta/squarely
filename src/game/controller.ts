@@ -22,6 +22,8 @@ import { loadProfile, resetProfile, saveProfile, topMistakes, type Profile } fro
 import { BOARD_THEMES, PIECE_STYLES, isBoardTheme, isPieceStyle, type BoardTheme, type PieceStyle } from '../ui/themes'
 import { runScout, type ScoutReport, type ScoutSource } from '../scout/scout'
 import { compress, flatten } from '../memory/condense'
+import { gradeMove, moveFacts, type Grade } from '../chess/teach'
+import { CONCEPT_KEYS, findConcept, identifyOpening, isBookMove } from '../chess/knowledge'
 
 export type Role = 'Voice' | 'Referee' | 'Opponent' | 'Tutor' | 'Memory' | 'Board' | 'Scout'
 
@@ -43,8 +45,11 @@ type KidMoveLog = {
   afterHint: boolean
 }
 
+/** One played move with its engine grade (null while not graded). */
+export type PlayedMove = { ply: number; san: string; color: Color; to: Square; grade: Grade | null }
+
 export type Mark = { square: Square; kind: 'danger' | 'focus' | 'target' }
-export type Arrow = { from: Square; to: Square; kind: 'move' | 'threat' | 'option' }
+export type Arrow = { from: Square; to: Square; kind: 'move' | 'threat' | 'option' | 'suggest' }
 export type Marks = { squares: Mark[]; arrows: Arrow[] }
 export type BuddyMood = 'worried' | 'happy' | null
 
@@ -75,6 +80,7 @@ export type GameSnapshot = {
   marks: Marks
   mood: BuddyMood
   hintOpen: boolean
+  moves: PlayedMove[]
 }
 
 export type Panel = 'summary' | 'scout' | 'help' | null
@@ -100,6 +106,8 @@ const saveSettings = (v: Settings) => {
   }
 }
 
+// Long enough for the kid's piece to finish sliding before the buddy answers.
+const MIN_THINK_MS = 550
 const HINT_COOLDOWN_KID_MOVES = 3
 const KIDS_KEY = 'squarely.kidsMode'
 const readKidsMode = () => {
@@ -133,6 +141,7 @@ export class GameController {
   private announce = ''
   private thinking = false
   private kidMoves: KidMoveLog[] = []
+  private grades: (Grade | null)[] = [] // per ply, aligned with chess.history()
   private lastHintAtKidMove = -99
   private hintOpen = false // tutor intervened and is waiting for the kid to retry
   private gameRecorded = false
@@ -177,6 +186,7 @@ export class GameController {
       summaryLine: this.summaryLine,
       micOffSeq: this.micOffSeq,
       marks: this.marks,
+      moves: this.chess.history({ verbose: true }).map((m, i) => ({ ply: i, san: m.san, color: m.color, to: m.to, grade: this.grades[i] ?? null })),
       hintOpen: this.hintOpen,
       mood: this.mood,
       scouting: this.scouting,
@@ -233,6 +243,15 @@ export class GameController {
 
   // ---------- evaluation ----------
   /** Eval in centipawns from the KID's point of view. */
+  /** Grade the move just played (last ply) for the move list and board badge. */
+  private gradePly(fenBefore: string, uci: string, wpBefore: number, wpAfter: number): Grade {
+    const hist = this.chess.history()
+    const ply = hist.length - 1
+    const g = gradeMove(fenBefore, uci, wpBefore, wpAfter, isBookMove(hist, ply))
+    this.grades[ply] = g
+    return g
+  }
+
   private async kidEval(fen: string): Promise<number> {
     const hit = this.evalCache.get(fen)
     if (hit !== undefined) return hit
@@ -328,6 +347,7 @@ export class GameController {
       // The finishing move counts too (a checkmate is the best move of the game).
       const won = over === 'checkmate_kid_wins'
       this.kidMoves.push({ san: move.san, wpBefore: winProb(cpBefore), wpAfter: won ? 1 : 0.5, blunder: false, motif: null, afterHint: this.hintOpen })
+      this.gradePly(fenBefore, move.lan, winProb(cpBefore), won ? 1 : 0.5)
       this.hintOpen = false
       this.finishGame()
       return { status: 'played', you_played: you, game_over: over }
@@ -349,10 +369,11 @@ export class GameController {
     let dangerSquares: string[] = []
     if (blunder) ({ motif, hintFacts, squares: dangerSquares = [] } = await this.punishment())
     this.kidMoves.push({ san: move.san, wpBefore, wpAfter, blunder, motif, afterHint })
+    const grade = this.gradePly(fenBefore, move.lan, wpBefore, wpAfter)
     this.log(
       'Tutor',
       blunder ? `Blunder spotted (${motif ?? 'material'})` : afterHint ? 'Retry after hint ✓' : 'Move OK',
-      { winProbBefore: wpBefore.toFixed(2), winProbAfter: wpAfter.toFixed(2), hint: blunder && canHint },
+      { grade, winProbBefore: wpBefore.toFixed(2), winProbAfter: wpAfter.toFixed(2), hint: blunder && canHint },
       performance.now() - t1,
     )
 
@@ -370,6 +391,7 @@ export class GameController {
       return {
         status: 'played',
         you_played: you,
+        move_grade: grade,
         tutor: {
           intervene: true,
           instruction:
@@ -384,6 +406,7 @@ export class GameController {
     return {
       status: 'played',
       you_played: you,
+      move_grade: grade,
       praise: afterHint && !blunder ? (this.setMood('happy'), 'kid fixed the mistake after the hint question') : undefined,
       opponent_played: opp,
     }
@@ -402,6 +425,8 @@ export class GameController {
     this.emit()
     const t0 = performance.now()
     const res = await getEngine().analyse(this.chess.fen(), { depth: 8, multiPv: 4 })
+    const pause = MIN_THINK_MS - (performance.now() - t0)
+    if (pause > 0) await new Promise((r) => setTimeout(r, pause))
     const lines = res.lines.length ? res.lines : []
     // Softmax over centipawn loss: low levels pick weaker moves more often, so kids can win.
     const tau = [0, 260, 140, 70, 30, 8][this.level] ?? 70
@@ -411,10 +436,12 @@ export class GameController {
     let pick = 0
     while (pick < weights.length - 1 && (r -= weights[pick]) > 0) pick++
     const uci = lines[pick]?.move
+    const fenBefore = this.chess.fen()
     const move = uci
       ? this.chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] ?? 'q' })
       : this.chess.move(this.chess.moves()[0])
     this.lastMove = { from: move.from, to: move.to }
+    if (lines[pick]) this.gradePly(fenBefore, move.lan, winProb(bestCp), winProb(lines[pick].scoreCp))
     this.point([{ from: move.from, to: move.to, kind: 'move' }], [])
     const opp = this.describe(move)
     this.say(`Buddy moved the ${opp.piece} to ${move.to}${opp.captured ? `, taking your ${opp.captured}` : ''}${opp.check ? '. Check!' : '.'}`)
@@ -465,6 +492,103 @@ export class GameController {
     return out
   }
 
+  // ---------- Teaching: show, don't just tell ----------
+  /** Coach: the engine's best move, optionally for one piece only, with facts about why. Draws a green arrow. */
+  async suggestMove(pieceWord?: string): Promise<Record<string, unknown>> {
+    const t0 = performance.now()
+    const c = this.chess
+    if (this.overReason()) return { status: 'game_over' }
+    if (c.turn() !== this.kidColor) return { status: 'not_your_turn' }
+    const SYM: Record<string, string> = { pawn: 'p', knight: 'n', horse: 'n', bishop: 'b', rook: 'r', castle: 'r', queen: 'q', king: 'k' }
+    const sym = pieceWord ? SYM[pieceWord.toLowerCase()] : undefined
+    const legal = c.moves({ verbose: true }).filter((m) => !sym || m.piece === sym)
+    if (!legal.length) return { status: 'no_moves_for_piece', piece: pieceWord, explain: `Your ${pieceWord} has no legal moves right now.` }
+    const fen = c.fen()
+    const searchMoves = sym ? legal.map((m) => m.from + m.to + (m.promotion ?? '')) : undefined
+    const [res, overallCp] = await Promise.all([
+      getEngine().analyse(fen, { depth: 12, multiPv: Math.min(2, legal.length), searchMoves }),
+      sym ? this.kidEval(fen) : Promise.resolve(null),
+    ])
+    const best = res.lines[0]
+    if (!best) return { status: 'engine_unavailable' }
+    const facts = moveFacts(fen, best.move, this.kidColor, this.kidsMode)
+    if (!facts) return { status: 'engine_unavailable' }
+    const wpBest = winProb(best.scoreCp)
+    const second = res.lines[1]
+    const onlyMove = second ? wpBest - winProb(second.scoreCp) > 0.15 : true
+    // For one piece: is moving it actually a good idea compared with the best move overall?
+    const pieceIsGoodChoice = overallCp === null ? undefined : winProb(overallCp) - wpBest <= 0.07
+    this.point([{ from: facts.from, to: facts.to, kind: 'suggest' }], [{ square: facts.to, kind: 'target' }])
+    this.mood = 'happy'
+    this.say(`Try ${facts.piece} to ${this.kidsMode ? facts.to_where : facts.to}. The green arrow shows it.`)
+    this.log('Tutor', `Suggests ${facts.san}`, { for: pieceWord ?? 'any piece', idea: facts.idea, only: onlyMove }, performance.now() - t0)
+    this.emit()
+    return {
+      status: 'ok',
+      suggestion: facts,
+      shown_on_board: 'green arrow',
+      clearly_best: onlyMove,
+      ...(pieceWord ? { moving_this_piece_is_a_good_idea: pieceIsGoodChoice } : {}),
+      engine_eval_pawns: this.kidsMode || Math.abs(best.scoreCp) > 90000 ? undefined : Math.round(best.scoreCp) / 100,
+    }
+  }
+
+  /** Coach: how good was the kid's last move, and what was best there. Shows both as arrows. */
+  async reviewMove(): Promise<Record<string, unknown>> {
+    const t0 = performance.now()
+    const hist = this.chess.history({ verbose: true })
+    const last = [...hist].reverse().find((m) => m.color === this.kidColor)
+    if (!last) return { status: 'no_move_yet' }
+    const res = await getEngine().analyse(last.before, { depth: 12, multiPv: 1 })
+    const best = res.lines[0]
+    if (!best) return { status: 'engine_unavailable' }
+    const playedCp = await this.kidEval(last.after)
+    const loss = Math.max(0, winProb(best.scoreCp) - winProb(playedCp))
+    const lastPly = hist.lastIndexOf(last)
+    const v: Grade = this.grades[lastPly] ?? gradeMove(last.before, last.lan, winProb(best.scoreCp), winProb(playedCp), isBookMove(this.chess.history(), lastPly))
+    const good = v === 'best' || v === 'great' || v === 'brilliant' || v === 'book'
+    const played = moveFacts(last.before, last.from + last.to + (last.promotion ?? ''), this.kidColor, this.kidsMode)
+    const bestFacts = best.move === last.from + last.to + (last.promotion ?? '') ? null : moveFacts(last.before, best.move, this.kidColor, this.kidsMode)
+    this.point(
+      [
+        { from: last.from, to: last.to, kind: 'move' },
+        ...(bestFacts && !good ? [{ from: bestFacts.from, to: bestFacts.to, kind: 'suggest' as const }] : []),
+      ],
+      [],
+    )
+    this.mood = good ? 'happy' : null
+    this.log('Tutor', `Review ${last.san}: ${v}`, { best: bestFacts?.san ?? last.san, loss: loss.toFixed(2) }, performance.now() - t0)
+    this.emit()
+    return {
+      status: 'ok',
+      your_move: played,
+      verdict: v,
+      better_move: good ? null : bestFacts,
+      shown_on_board: bestFacts && !good ? 'your move in blue, the better move in green' : 'your move in blue',
+    }
+  }
+
+  /** Library: the opening on the board, or a tactic / principle explained. Curated text, not model memory. */
+  chessKnowledge(topic?: string): Record<string, unknown> {
+    const t = (topic ?? '').trim()
+    if (!t || /^(the |this |current |my )*opening$|what.*(called|playing)/i.test(t)) {
+      const o = identifyOpening(this.chess.history())
+      this.log('Tutor', o ? `Opening: ${o.name}` : 'Opening: not in the book')
+      if (!o) return { status: 'unknown_opening', note: 'This position is not in the opening book. Use opening_principles instead.', principles: findConcept('opening_principles')?.[1] }
+      // Point at the next book move when it's the kid's turn and it is legal.
+      if (o.book_next && this.chess.turn() === this.kidColor) {
+        const m = this.chess.moves({ verbose: true }).find((x) => x.san === o.book_next)
+        if (m) this.point([{ from: m.from, to: m.to, kind: 'suggest' }], [])
+      }
+      return { status: 'ok', opening: o.name, idea: this.kidsMode ? o.kid : o.idea, usual_next_move: o.book_next, shown_on_board: o.book_next ? 'green arrow' : undefined }
+    }
+    const hit = findConcept(t)
+    this.log('Tutor', hit ? `Explain ${hit[0]}` : `No entry for "${t}"`)
+    if (!hit) return { status: 'not_in_library', topics: CONCEPT_KEYS }
+    const [key, c] = hit
+    return { status: 'ok', topic: key, title: c.title, explain: this.kidsMode ? c.kid : c.grownup, look_for: c.look_for }
+  }
+
   describeBoard(focus: string = 'all'): Record<string, unknown> {
     const c = this.chess
     const me = this.kidColor
@@ -501,6 +625,7 @@ export class GameController {
     const k = this.chess.undo()
     if (k) undone.push(k.san)
     if (k && this.kidMoves.length) this.kidMoves.pop()
+    this.grades.length = this.chess.history().length
     const prev = this.chess.history({ verbose: true }).at(-1)
     this.lastMove = prev ? { from: prev.from, to: prev.to } : null
     this.pending = null
@@ -720,6 +845,7 @@ export class GameController {
     this.lastMove = null
     this.pending = null
     this.kidMoves = []
+    this.grades = []
     this.lastHintAtKidMove = -99
     this.hintOpen = false
     this.gameRecorded = false
@@ -804,7 +930,7 @@ export class GameController {
     this.emit()
   }
 
-  closePanel() {
+  closePanel = () => {
     this.panel = null
     this.emit()
   }

@@ -24,7 +24,10 @@ const WORDS: [RegExp, PieceWord][] = [
 
 export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> | null {
   const t = text.toLowerCase().trim()
-  if (/\b(undo|take (it )?back|oops)\b/.test(t)) return { name: 'undo', args: {} }
+  if (/\b(undo|take (it )?back|oops|try again)\b/.test(t)) return { name: 'undo', args: {} }
+  // Castling first: "castle" alone means the move, not the rook.
+  if (/\b(castle|castling)\b/.test(t) && !/\b(my|the|his|her) castle\b|castle (to|takes|on)\b/.test(t))
+    return { name: 'make_move', args: { castle: /long|queen/.test(t) ? 'long' : 'short' } }
   if (/\b(keep it|go on|your (move|turn)|continue)\b/.test(t)) return { name: 'engine_reply', args: {} }
   const theme = Object.entries(THEME_WORDS).find(([re]) => new RegExp(re).test(t))
   if (theme && /board|colou?r|theme/.test(t)) return { name: 'change_settings', args: { board_theme: theme[1] } }
@@ -36,6 +39,14 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   if (/help|what can i say/.test(t) && !/attack/.test(t)) return { name: 'show_screen', args: { screen: 'help' } }
   if (/close|back to (the )?game/.test(t)) return { name: 'show_screen', args: { screen: 'game' } }
   if (/play (as )?black/.test(t)) return { name: 'new_game', args: { color: 'black' } }
+  if (/was (that|it) (good|bad|ok)|why was|should i have/.test(t)) return { name: 'review_move', args: {} }
+  if (/best move|good move|what should|show me a move|suggest/.test(t)) {
+    const piece = WORDS.find(([re]) => re.test(t))?.[1]
+    return { name: 'suggest_move', args: piece ? { piece } : {} }
+  }
+  if (/what opening|which opening|opening is this/.test(t)) return { name: 'chess_knowledge', args: {} }
+  const what = t.match(/what(?:'s| is) an? ([a-z' -]+?)\??$|how does ([a-z' -]+?) work|explain ([a-z' -]+?)\??$/)
+  if (what) return { name: 'chess_knowledge', args: { topic: what[1] ?? what[2] ?? what[3] } }
   if (/attack|danger|threat|hint|winning/.test(t)) return { name: 'analyse_position', args: {} }
   if (/where.*king/.test(t)) return { name: 'describe_board', args: { focus: 'king' } }
   if (/read|describe|board/.test(t)) return { name: 'describe_board', args: { focus: 'all' } }
@@ -79,6 +90,19 @@ export function phraseOffline(name: string, r: Record<string, unknown>): string 
   }
   if (name === 'make_move' && opp) {
     return `${r.praise ? 'Brilliant, you found it! ' : ''}I moved my ${opp.piece} to ${opp.to}${opp.captured ? ` and took your ${opp.captured}` : ''}${opp.your_king_in_check ? '. Check!' : '.'}`
+  }
+  if (name === 'suggest_move' && r.suggestion) {
+    const f = r.suggestion as { piece: string; to: string; to_where: string; captures: string | null; check: boolean }
+    return `Look at the green arrow: your ${f.piece} to ${f.to}${f.captures ? `, taking the ${f.captures}` : ''}${f.check ? ', with check' : ''}.`
+  }
+  if (name === 'review_move' && r.verdict) {
+    const b = r.better_move as { piece: string; to: string } | null
+    return `That was ${/^[aeiou]/.test(String(r.verdict)) ? 'an' : 'a'} ${r.verdict} move.${b ? ` The green arrow shows a better one: ${b.piece} to ${b.to}.` : ''}`
+  }
+  if (name === 'chess_knowledge') {
+    if (r.opening) return `This is the ${r.opening}. ${r.idea}`
+    if (r.explain) return `${r.title}: ${r.explain}`
+    return "I don't know that one yet."
   }
   if (name === 'analyse_position') {
     const under = r.your_pieces_under_attack as { piece: string; where: string; attacked_by: string[] }[]

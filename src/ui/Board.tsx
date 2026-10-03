@@ -5,6 +5,8 @@ import { CHARACTER } from '../chess/facts'
 
 import { ANIMAL, BOARD_THEMES, GLYPH, LETTER, type BoardTheme, type PieceStyle } from './themes'
 import type { Marks } from '../game/controller'
+import type { Grade } from '../chess/teach'
+import { GRADE } from './grades'
 
 const PLAIN: Record<string, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' }
 
@@ -16,6 +18,7 @@ type Props = {
   fen: string
   pov: Color
   lastMove: { from: Square; to: Square } | null
+  lastGrade?: Grade | null
   checkSquare: Square | null
   disabled: boolean
   onMove: (from: Square, to: Square) => void
@@ -30,13 +33,20 @@ const centre = (sq: Square, pov: Color) => {
   return { x: col * 100 + 50, y: row * 100 + 50 }
 }
 
+/** Offset from the destination back to the origin, so CSS can slide the piece home. */
+const slideFrom = (from: Square, to: Square, pov: Color) => {
+  const a = centre(from, pov)
+  const b = centre(to, pov)
+  return { ['--dx' as string]: `${a.x - b.x}px`, ['--dy' as string]: `${a.y - b.y}px` }
+}
+
 const sqAt = (col: number, row: number, pov: Color): Square => {
   const file = pov === 'w' ? col : 7 - col
   const rank = pov === 'w' ? 7 - row : row
   return `${'abcdefgh'[file]}${rank + 1}` as Square
 }
 
-export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastMove, checkSquare, disabled, onMove }: Props) {
+export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastMove, lastGrade, checkSquare, disabled, onMove }: Props) {
   const chess = useMemo(() => new Chess(fen), [fen])
   const [selected, setSelected] = useState<Square | null>(null)
   const [cursor, setCursor] = useState<[number, number]>([4, 6])
@@ -141,7 +151,11 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
             {selected === sq && <rect width="100" height="100" className="sel" />}
             {targets.has(sq) && (p ? <circle cx="50" cy="50" r="46" className="target-ring" /> : <circle cx="50" cy="50" r="16" className="target" />)}
             {p && (
-              <g className={`piece ${p.color === 'w' ? 'pw' : 'pb'}`}>
+              <g
+                key={lastMove?.to === sq ? `${lastMove.from}${sq}${fen}` : 'still'}
+                className={`piece ${p.color === 'w' ? 'pw' : 'pb'} ${lastMove?.to === sq ? 'slide' : ''}`}
+                style={lastMove?.to === sq ? slideFrom(lastMove.from, sq, pov) : undefined}
+              >
                 <title>{`${p.color === pov ? 'Your' : "Buddy's"} ${kidsMode ? CHARACTER[p.type] : PLAIN[p.type]}`}</title>
                 {pieceStyle === 'animals' ? (
                   <>
@@ -174,7 +188,7 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
               </g>
             )}
             {hover === sq && !p && <text x="50" y="60" className="sq-name">{sq}</text>}
-            {isCursor && <rect x="3" y="3" width="94" height="94" className="cursor" />}
+            {isCursor && focused && <rect x="3" y="3" width="94" height="94" className="cursor" />}
           </g>
         )
       })}
@@ -182,7 +196,7 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
       {/* Squarely points: rings and arrows drawn only from computed tool results */}
       <g className="marks" pointerEvents="none">
         <defs>
-          {(['move', 'threat', 'option'] as const).map((k) => (
+          {(['move', 'threat', 'option', 'suggest'] as const).map((k) => (
             <marker key={k} id={`head-${k}`} viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
               <path d="M0 0 L10 5 L0 10 z" className={`head-${k}`} />
             </marker>
@@ -192,12 +206,12 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
           const c = centre(m.square, pov)
           return <rect key={`${m.kind}-${m.square}`} x={c.x - 46} y={c.y - 46} width="92" height="92" rx="16" className={`mark mark-${m.kind}`} />
         })}
-        {marks.arrows.map((a) => {
+        {marks.arrows.map((a, i) => {
           const f = centre(a.from, pov)
           const t = centre(a.to, pov)
           const len = Math.hypot(t.x - f.x, t.y - f.y) || 1
           const shorten = 26
-          return (
+          const line = (
             <line
               key={`${a.kind}-${a.from}-${a.to}`}
               x1={f.x}
@@ -206,9 +220,32 @@ export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastM
               y2={t.y - ((t.y - f.y) / len) * shorten}
               className={`arrow arrow-${a.kind}`}
               markerEnd={`url(#head-${a.kind})`}
+              pathLength={1}
             />
           )
+          // Numbered options: the big digit sits where the arrow ends, matching the "1, 2, 3" buttons.
+          const num = a.kind === 'option' && (
+            <g key={`n-${a.from}-${a.to}`} className="opt-num" transform={`translate(${t.x} ${t.y})`}>
+              <circle r="22" />
+              <text dy="9" textAnchor="middle">
+                {i + 1}
+              </text>
+            </g>
+          )
+          return num ? [line, num] : line
         })}
+        {lastMove && lastGrade && (() => {
+          // Grade badge on the corner of the square the last move landed on.
+          const c = centre(lastMove.to, pov)
+          const g = GRADE[lastGrade]
+          return (
+            <g key={`${lastMove.to}-${lastGrade}`} className="grade-badge" transform={`translate(${c.x + 34} ${c.y - 34})`}>
+              <title>{g.label}</title>
+              <circle r="22" fill={g.color} />
+              <text textAnchor="middle" dominantBaseline="central" fontSize={g.icon.length > 1 && lastGrade !== 'book' ? 18 : 22}>{g.icon}</text>
+            </g>
+          )
+        })()}
       </g>
     </svg>
     {/* Screen readers don't reliably re-read a changing aria-label, so the cursor is announced here. */}

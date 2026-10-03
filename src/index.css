@@ -94,7 +94,7 @@ a { color: var(--tint); }
 .top-actions { display: flex; align-items: center; gap: 6px; flex: none; }
 .hello { font-size: 15px; font-weight: 600; color: var(--label-2); margin-right: 4px; }
 .icon-btn {
-  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%;
+  display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
   font-size: 20px; color: var(--tint); background: var(--fill);
   transition: transform 0.12s ease, background 0.12s ease;
 }
@@ -168,7 +168,7 @@ a { color: var(--tint); }
   width: min(100%, 620px); display: flex; gap: 12px; align-items: center; justify-content: space-between;
   padding: 12px 14px; border-radius: 14px; background: rgba(255, 149, 0, 0.14); font-size: 15px; font-weight: 500;
 }
-.pill-btn { flex: none; padding: 7px 14px; border-radius: 999px; background: var(--tint); color: #fff; font-weight: 600; font-size: 15px; }
+.pill-btn { flex: none; min-height: 44px; padding: 7px 16px; border-radius: 999px; background: var(--tint); color: #fff; font-weight: 600; font-size: 15px; }
 
 /* ---------- dock ---------- */
 .dock { width: min(100%, 620px); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 8px; }
@@ -231,7 +231,7 @@ a { color: var(--tint); }
   border: 0.5px solid var(--separator); background: var(--surface); font-size: 17px; outline: none;
 }
 .type input:focus { border-color: var(--tint); box-shadow: 0 0 0 3px var(--tint-soft); }
-.send { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 50%; background: var(--tint); color: #fff; font-size: 20px; }
+.send { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: var(--tint); color: #fff; font-size: 20px; }
 .live-state { font: 11px var(--mono); color: var(--label-3); }
 
 /* ---------- side panel (sidebar on desktop, bottom sheet on phone) ---------- */
@@ -254,7 +254,7 @@ a { color: var(--tint); }
 .bubble .receipts { display: flex; margin: 6px 0 0; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { padding: 8px 12px; border-radius: 999px; background: var(--tint-soft); color: var(--tint); font-size: 14px; font-weight: 600; }
+.chip { min-height: 44px; padding: 8px 14px; border-radius: 999px; background: var(--tint-soft); color: var(--tint); font-size: 14px; font-weight: 600; }
 .chip:active { transform: scale(0.97); }
 
 .group { display: grid; gap: 6px; }
@@ -430,3 +430,56 @@ a { color: var(--tint); }
 .studio-steps li::before { content: counter(s); display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 5px; border-radius: 50%; background: var(--fill, rgba(120,120,128,.16)); font-size: 11px; font-weight: 600; }
 .condense-note { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4; background: var(--fill, rgba(120,120,128,.12)); text-align: left; }
 .cap-kid.heard { opacity: 0.6; font-style: italic; }
+
+/* Teaching visuals: the suggested move draws itself in green; grades pop onto the square. */
+.arrow-suggest { stroke: rgba(52, 199, 89, 0.9); stroke-width: 14; }
+.head-suggest { fill: rgba(52, 199, 89, 1); }
+.arrow { stroke-dasharray: 1; stroke-dashoffset: 1; animation: draw-arrow 0.45s ease-out forwards; }
+.arrow-option { stroke-dasharray: 0.02 0.06; stroke-dashoffset: 0; animation: none; }
+@keyframes draw-arrow { to { stroke-dashoffset: 0; } }
+.grade-badge { animation: pop-badge 0.35s cubic-bezier(0.2, 1.6, 0.4, 1) both; transform-box: fill-box; }
+.grade-badge circle { stroke: #fff; stroke-width: 4; filter: drop-shadow(0 3px 6px rgba(0, 0, 0, 0.35)); }
+.grade-badge text { fill: #fff; font-weight: 800; font-family: system-ui, sans-serif; }
+@keyframes pop-badge { from { opacity: 0; scale: 0.2; } to { opacity: 1; scale: 1; } }
+
+.move-strip { list-style: none; margin: 0; padding: 4px 2px; display: flex; gap: 6px; overflow-x: auto; max-width: min(100%, 720px); width: 100%; scrollbar-width: none; }
+.move-strip::-webkit-scrollbar { display: none; }
+.move-strip .mv { flex: none; display: inline-flex; align-items: center; gap: 4px; padding: 5px 10px; border-radius: 999px; background: var(--fill); font: 600 14px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--label); border: 2px solid transparent; }
+.move-strip .mv[style] { border-color: var(--g); }
+.move-strip .mv.theirs { opacity: 0.7; }
+.move-strip .mv.latest { animation: pop-badge 0.3s ease-out both; }
+.move-strip .num { color: var(--label-3); font-weight: 500; }
+.move-strip .gi { color: var(--g); font-weight: 800; }
+
+@media (prefers-reduced-motion: reduce) {
+  .arrow, .grade-badge, .move-strip .mv.latest { animation: none; stroke-dashoffset: 0; }
+}
+
+/* Pieces glide to their new square instead of teleporting. */
+.board .piece.slide { animation: slide-home 380ms cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+@keyframes slide-home { from { transform: translate(var(--dx), var(--dy)); } to { transform: translate(0, 0); } }
+@media (prefers-reduced-motion: reduce) {
+  .board .piece.slide, .status.busy .dot, .mic.connecting, .trace li { animation: none !important; }
+}
+
+/* ---------- tutor next-step buttons ---------- */
+.hint-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; animation: rise 0.22s ease; }
+.hint-actions .primary, .hint-actions .pill-btn { min-height: 48px; padding: 0 22px; font-size: 17px; }
+
+/* ---------- game over ---------- */
+.over-card { position: relative; display: grid; justify-items: center; gap: 12px; text-align: center; overflow: hidden; }
+.over-card.won h2 { font-size: 30px; }
+.link-btn { background: none; border: 0; color: var(--tint); font-size: 15px; min-height: 44px; cursor: pointer; }
+.confetti { position: absolute; inset: 0; pointer-events: none; }
+.confetti span { position: absolute; top: -40px; font-size: 28px; color: var(--tint); animation: fall 1.8s ease-in forwards; }
+.confetti span:nth-child(3n) { color: #ff9f0a; }
+.confetti span:nth-child(3n + 1) { color: #34c759; }
+@keyframes fall { to { transform: translateY(460px) rotate(300deg); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .confetti { display: none; } }
+.board .opt-num circle { fill: var(--tint); stroke: #fff; stroke-width: 4; }
+.board .opt-num text { fill: #fff; font: 800 28px var(--rounded); }
+
+/* Short phones (iPhone SE): the card scrolls instead of hiding its button off-screen. */
+.card { max-height: calc(100dvh - 32px); overflow-y: auto; overscroll-behavior: contain; }
+@media (max-height: 700px) { .modal { place-items: start center; padding: 16px; } .card { padding: 18px; gap: 10px; } }
+.over-card .primary { min-height: 50px; padding: 0 36px; font-size: 17px; }

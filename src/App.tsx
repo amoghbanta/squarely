@@ -3,6 +3,7 @@ import type { Square } from 'chess.js'
 import { localVoice, type LocalVoiceStatus } from './voice/localVoice'
 import { game, type TranscriptLine } from './game/controller'
 import { Board } from './ui/Board'
+import { MoveStrip } from './ui/MoveStrip'
 import { ScoutActivity } from './ui/ScoutActivity'
 import { TracePanel } from './ui/TracePanel'
 import { LiveVoice, LIVE_MODEL, type LiveState } from './voice/live'
@@ -35,6 +36,9 @@ const RECEIPT: Record<string, string> = {
   make_move: 'Referee · chess.js',
   engine_reply: 'Opponent · Stockfish',
   analyse_position: 'Tutor · Stockfish',
+  suggest_move: 'Tutor · Stockfish',
+  review_move: 'Tutor · Stockfish',
+  chess_knowledge: 'Library · curated',
   describe_board: 'Board · chess.js',
   undo: 'Referee',
   scout_games: 'Scout · Stockfish',
@@ -45,7 +49,7 @@ const RECEIPT: Record<string, string> = {
 
 const LANGUAGES = ['English', 'Svenska', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', 'Nederlands', 'Polski', 'Türkçe', 'العربية', 'हिन्दी', '中文', '日本語', '한국어']
 
-const QUICK = ["What's attacking me?", 'Give me a hint', 'Undo', 'Read the board']
+const QUICK = ['Show me a good move', 'Was that good?', "What's attacking me?", 'What opening is this?', 'Undo']
 
 const PHONE_QUERY = '(max-width: 899px)'
 const usePhone = () => {
@@ -83,6 +87,12 @@ export function App() {
   }, [])
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
+  const [showGrownUp, setShowGrownUp] = useState(false)
+  const [armForget, setArmForget] = useState(false)
+  const closeSummary = () => {
+    setShowGrownUp(false)
+    game.closePanel()
+  }
   const [tab, setTab] = useState<Tab>('coach')
   const [sheetOpen, setSheetOpen] = useState(false)
   const voice = useRef<LiveVoice | null>(null)
@@ -165,8 +175,12 @@ export function App() {
     game.addTranscript('kid', t)
     if (await ensureLive()) return voice.current!.sendText(t)
     const call = parseOffline(t)
-    if (!call) return speakLocal('I only know chess words offline. Try "horse to the middle" or "undo".')
-    const r = await runTool(game, call)
+    if (!call) {
+      const name = game.getSnapshot().profile.name
+      if (/^(hi|hello|hey|hej|hallo|hola)\b/i.test(t)) return speakLocal(`Hi${name ? ` ${name}` : ''}! Tell me a move, like "horse to the middle".`)
+      return speakLocal('I only know chess words offline. Try "horse to the middle", "castle", or "undo".')
+    }
+    const r = await runTool(game, call, 'offline')
     speakLocal(phraseOffline(call.name!, r))
   }
 
@@ -224,7 +238,7 @@ export function App() {
 
   // Tap / keyboard moves go through the same Referee tool, then the voice agent is told what happened.
   const onBoardMove = async (from: Square, to: Square) => {
-    const r = await runTool(game, { name: 'make_move', args: { from, to } })
+    const r = await runTool(game, { name: 'make_move', args: { from, to } }, 'tap')
     if (await ensureLive()) voice.current!.sendEvent(`[The player moved on the screen. make_move result: ${JSON.stringify(r)}. React per the rules.]`)
     else speakLocal(phraseOffline('make_move', r))
   }
@@ -418,10 +432,12 @@ export function App() {
             fen={s.fen}
             pov={s.kidColor}
             lastMove={s.lastMove}
+            lastGrade={s.moves.at(-1)?.grade ?? null}
             checkSquare={s.checkSquare}
             disabled={s.thinking || !!s.over}
             onMove={onBoardMove}
           />
+          <MoveStrip moves={s.moves} kidColor={s.kidColor} />
 
           <div className="captions" aria-hidden>
             {heard ? <p className="cap-kid heard">{heard}…</p> : lastKid && <p className="cap-kid">{lastKid.text}</p>}
@@ -442,6 +458,17 @@ export function App() {
                   <b>{i + 1}</b> {o.label}
                 </button>
               ))}
+            </div>
+          )}
+
+          {s.hintOpen && !s.over && (
+            <div className="hint-actions" role="group" aria-label="What next?">
+              <button className="primary" autoFocus onClick={() => void say('undo')}>
+                ↩ Try again
+              </button>
+              <button className="pill-btn" onClick={() => void say('keep it')}>
+                Keep going ▶
+              </button>
             </div>
           )}
 
@@ -656,8 +683,19 @@ export function App() {
                   <button className="row action" onClick={forgetKey}>
                     {hasKey ? 'Change Gemini key' : 'Add a Gemini key'}
                   </button>
-                  <button className="row action danger" onClick={() => (game.forgetMe(true), location.reload())}>
-                    Forget me
+                  <button
+                    className="row action danger"
+                    onClick={() => {
+                      if (!armForget) {
+                        setArmForget(true)
+                        setTimeout(() => setArmForget(false), 4000)
+                        return
+                      }
+                      game.forgetMe(true)
+                      location.reload()
+                    }}
+                  >
+                    {armForget ? 'Tap again to erase name, games and progress' : 'Forget me'}
                   </button>
                 </Group>
                 <p className="caption center">
@@ -725,13 +763,36 @@ export function App() {
       )}
 
       {s.panel === 'summary' && s.summaryLine && (
-        <Modal title="For grown-ups" onClose={game.closePanel}>
-          <h2>For grown-ups</h2>
-          <p className="summary">{s.summaryLine}</p>
-          <p className="caption">Every fact above was computed by chess.js and Stockfish, not guessed by the AI.</p>
-          <button className="primary" onClick={game.closePanel}>
-            Done
-          </button>
+        <Modal title={s.over ? 'Game over' : 'For grown-ups'} onClose={closeSummary}>
+          {s.over && !showGrownUp ? (
+            <div className={`over-card ${s.over === 'checkmate_kid_wins' ? 'won' : ''}`}>
+              {s.over === 'checkmate_kid_wins' && <Confetti />}
+              <Avatar mood={s.over === 'checkmate_opponent_wins' ? 'idle' : 'happy'} size={120} />
+              <h2>{s.over === 'checkmate_kid_wins' ? 'You won! Checkmate!' : s.over === 'checkmate_opponent_wins' ? 'Good game!' : "It's a draw!"}</h2>
+              <p>{s.over === 'checkmate_kid_wins' ? 'What a finish. Want to play again?' : 'Want a rematch?'}</p>
+              <button
+                className="primary"
+                onClick={() => {
+                  closeSummary()
+                  void say('new game')
+                }}
+              >
+                Play again
+              </button>
+              <button className="link-btn" onClick={() => setShowGrownUp(true)}>
+                For grown-ups ›
+              </button>
+            </div>
+          ) : (
+            <>
+              <h2>For grown-ups</h2>
+              <p className="summary">{s.summaryLine}</p>
+              <p className="caption">Every fact above was computed by chess.js and Stockfish, not guessed by the AI.</p>
+              <button className="primary" onClick={closeSummary}>
+                Done
+              </button>
+            </>
+          )}
         </Modal>
       )}
 
@@ -763,6 +824,20 @@ export function App() {
           </button>
         </Modal>
       )}
+    </div>
+  )
+}
+
+// A short burst of falling chess pieces for a kid's win (skipped under reduced motion).
+function Confetti() {
+  const bits = '♞♛♜♝♟♚♞♛♜♝♟♚'.split('')
+  return (
+    <div className="confetti" aria-hidden>
+      {bits.map((b, i) => (
+        <span key={i} style={{ left: `${(i * 83) % 100}%`, animationDelay: `${(i % 6) * 0.12}s` }}>
+          {b}
+        </span>
+      ))}
     </div>
   )
 }

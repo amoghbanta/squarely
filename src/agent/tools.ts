@@ -42,6 +42,27 @@ export const toolDeclarations: FunctionDeclaration[] = [
     parametersJsonSchema: { type: 'object', properties: {} },
   },
   {
+    name: 'suggest_move',
+    behavior: Behavior.BLOCKING,
+    description: 'Tutor: the engine\'s best move for the player right now (optionally only for one piece), with teaching facts: what it takes, attacks, whether it is safe, and the idea behind it. It is drawn as a green arrow on the board. Call for "what\'s the best move", "what should my queen do", "show me a good move".',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: { piece: { type: 'string', enum: ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king'], description: 'Only consider moves of this piece.' } },
+    },
+  },
+  {
+    name: 'review_move',
+    behavior: Behavior.BLOCKING,
+    description: 'Tutor: grades the player\'s LAST move (brilliant/best/great/good/book/inaccuracy/mistake/blunder) against the engine, with what it did and, if it wasn\'t best, the better move drawn on the board. Call for "was that good?", "why was that bad?", "what should I have played?".',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'chess_knowledge',
+    behavior: Behavior.BLOCKING,
+    description: 'Curated chess knowledge: with no topic, names the opening being played (from the real moves) and its idea and next book move; with a topic, explains a tactic or principle (fork, pin, skewer, discovered attack, castling, en passant, back-rank mate, opening principles, piece values...). Use this instead of your own memory for chess teaching.',
+    parametersJsonSchema: { type: 'object', properties: { topic: { type: 'string', description: 'A tactic or idea, or "opening" for the current opening.' } } },
+  },
+  {
     name: 'describe_board',
     behavior: Behavior.BLOCKING,
     description: 'Board awareness for "read the board", "where is my king", "what did he just move".',
@@ -132,9 +153,10 @@ export const toolDeclarations: FunctionDeclaration[] = [
   },
 ]
 
-export async function runTool(game: GameController, call: Pick<FunctionCall, 'name' | 'args'>) {
+/** brain: who chose this tool. 'offline' means the keyword parser, so the trace never credits Gemini for it. */
+export async function runTool(game: GameController, call: Pick<FunctionCall, 'name' | 'args'>, brain: 'gemini' | 'offline' | 'tap' = 'gemini') {
   const args = (call.args ?? {}) as Record<string, unknown>
-  game.log('Voice', `→ ${call.name}`, Object.keys(args).length ? args : undefined)
+  game.log('Voice', `→ ${call.name}`, Object.keys(args).length ? { ...args, ...(brain !== 'gemini' ? { _brain: brain } : {}) } : brain !== 'gemini' ? { _brain: brain } : undefined)
   const t0 = performance.now()
   let result: Record<string, unknown>
   switch (call.name) {
@@ -146,6 +168,15 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       break
     case 'analyse_position':
       result = await game.analysePosition()
+      break
+    case 'suggest_move':
+      result = await game.suggestMove(typeof args.piece === 'string' ? args.piece : undefined)
+      break
+    case 'review_move':
+      result = await game.reviewMove()
+      break
+    case 'chess_knowledge':
+      result = game.chessKnowledge(typeof args.topic === 'string' ? args.topic : undefined)
       break
     case 'describe_board':
       result = game.describeBoard(String(args.focus ?? 'all'))
@@ -184,7 +215,7 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
     default:
       result = { error: `unknown tool ${call.name}` }
   }
-  game.log('Voice', `← ${call.name}`, result, performance.now() - t0)
+  game.log('Voice', `← ${call.name}`, brain !== 'gemini' ? { ...result, _brain: brain } : result, performance.now() - t0)
   game.noteSource(call.name ?? '')
   return result
 }

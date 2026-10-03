@@ -69,7 +69,7 @@ export class StockfishEngine {
     return next
   }
 
-  analyse(fen: string, opts: { depth?: number; multiPv?: number; skill?: number } = {}): Promise<EngineResult> {
+  analyse(fen: string, opts: { depth?: number; multiPv?: number; skill?: number; searchMoves?: string[] } = {}): Promise<EngineResult> {
     const depth = opts.depth ?? 12
     const multiPv = opts.multiPv ?? 1
     return this.enqueue(async () => {
@@ -80,7 +80,7 @@ export class StockfishEngine {
       let reached = 0
       let bestmove = ''
       await this.waitFor(
-        `go depth ${depth}`,
+        `go depth ${depth}${opts.searchMoves?.length ? ` searchmoves ${opts.searchMoves.join(' ')}` : ''}`,
         (l) => l.startsWith('bestmove'),
         (l) => {
           if (l.startsWith('bestmove')) {

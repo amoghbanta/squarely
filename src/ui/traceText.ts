@@ -38,6 +38,9 @@ const TOOL_ASK: Record<string, string> = {
   stop_listening: 'Asked to stop listening',
   forget_me: 'Asked Memory to forget this player',
   scout_games: 'Sent the Scout agent to study online games',
+  suggest_move: 'Asked the Tutor for a good move to show on the board',
+  review_move: 'Asked the Tutor to grade the last move',
+  chess_knowledge: 'Looked something up in the chess book (openings, tactics, rules)',
 }
 
 const moveWords = (a: J) =>
@@ -60,9 +63,13 @@ export function humanize(e: TraceEntry): string {
     const tool = t.slice(2)
     if (t.startsWith('→')) {
       const what = tool === 'make_move' ? `: ${moveWords(o)}` : tool === 'scout_games' && o.username ? ` (${o.username})` : tool === 'remember' && o.value ? `: “${o.value}”` : ''
+      if (o._brain === 'tap') return `The player moved on the board${what}. Sent straight to the Referee.`
+      if (o._brain === 'offline') return `Offline helper understood: ${tool}. ${TOOL_ASK[tool] ?? 'Called a tool'}${what}.`
       return `Gemini decided to call ${tool}. ${TOOL_ASK[tool] ?? 'Called a tool'}${what}.`
     }
     const st = o.status ? String(o.status).replace(/_/g, ' ') : 'done'
+    if (o._brain === 'tap') return `Referee answered (${st}).`
+    if (o._brain === 'offline') return `Answer ready (${st}). Read out with a template, no AI involved.`
     return `Answer handed back to Gemini (${st}). It turns these facts into words.`
   }
 
@@ -90,6 +97,14 @@ export function humanize(e: TraceEntry): string {
       const m = t.match(/\((.+)\)/)?.[1]
       return `Big slip spotted (${motif(m)}): winning chances ${pct(b)} → ${pct(a)}. ${o.hint ? 'Stepping in with a hint question, not the answer.' : 'Hinted recently, so staying quiet this time.'}`
     }
+    if (t.startsWith('Suggests ')) return `Stockfish picked ${t.slice(9)}${o.for && o.for !== 'any piece' ? ` for your ${o.for}` : ''}. Drawn as a green arrow${o.idea ? `; the idea: ${String(o.idea).replace(/_/g, ' ')}` : ''}.`
+    if (t.startsWith('Review ')) {
+      const [mv, grade] = t.slice(7).split(': ')
+      return `Graded ${mv} with Stockfish: ${grade}.${o.best && o.best !== mv ? ` A stronger move was ${o.best}, shown on the board.` : ''}`
+    }
+    if (t.startsWith('Explain ')) return `Looked up “${t.slice(8)}” in Squarely's chess book, so the explanation is written, not made up.`
+    if (t === 'Opening: not in the book') return `These moves aren't a named opening in the book, so Squarely won't invent one.`
+    if (t.startsWith('Opening: ')) return `Matched the moves so far to an opening in the book: ${t.slice(9)}.`
     if (t === 'analyse_position') return `Looked for danger with chess.js and Stockfish: ${o.threats} of your pieces under attack, ${o.targets} enemy pieces you could go after. Overall: ${o.overall}.`
   }
 

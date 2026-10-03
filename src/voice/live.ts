@@ -1,6 +1,9 @@
 // Gemini Live voice layer: mic (16 kHz PCM) -> Live model -> function calls -> spoken audio (24 kHz PCM).
 // The visitor brings their own API key; it goes straight from this browser to Google.
 import {
+  ActivityHandling,
+  EndSensitivity,
+  StartSensitivity,
   FunctionResponseScheduling,
   GoogleGenAI,
   Modality,
@@ -84,6 +87,17 @@ export class LiveVoice {
         // Thoughts must never be spoken to the player.
         thinkingConfig: { includeThoughts: false },
         contextWindowCompression: { slidingWindow: {} },
+        // Turn-taking: the player can cut in instantly (high start sensitivity), but Squarely waits for a
+        // real pause before answering (low end sensitivity, ~0.9 s silence), so kids thinking aloud aren't cut off.
+        realtimeInputConfig: {
+          activityHandling: ActivityHandling.START_OF_ACTIVITY_INTERRUPTS,
+          automaticActivityDetection: {
+            startOfSpeechSensitivity: StartSensitivity.START_SENSITIVITY_HIGH,
+            endOfSpeechSensitivity: EndSensitivity.END_SENSITIVITY_LOW,
+            prefixPaddingMs: 120,
+            silenceDurationMs: 900,
+          },
+        },
         sessionResumption: { handle: this.resumeHandle },
       },
       callbacks: {
