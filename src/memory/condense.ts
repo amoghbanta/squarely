@@ -25,3 +25,27 @@ export async function compress(messages: Msg[]): Promise<Compressed | null> {
 }
 
 export const flatten = (messages: Msg[]) => messages.map((m) => `${m.role === 'assistant' ? 'Squarely' : m.role === 'user' ? 'Player' : 'Note'}: ${m.content}`).join('\n')
+
+let proxyDown = false
+
+/**
+ * Run a Gemini call through the condense.chat proxy (OpenAI-compatible route, the visitor's own Gemini
+ * key upstream). condense compresses the prompt on the way. Returns the reply text, or null when the
+ * proxy isn't configured or fails, so the caller can call Gemini directly instead.
+ */
+export async function chatViaCondense(geminiKey: string, request: Record<string, unknown>): Promise<string | null> {
+  if (proxyDown) return null
+  try {
+    const r = await fetch('/api/condense', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ op: 'chat', geminiKey, request }),
+    })
+    if (r.status === 503 || r.status === 404) proxyDown = true
+    if (!r.ok) return null
+    const d = (await r.json()) as { choices?: { message?: { content?: string } }[] }
+    return d.choices?.[0]?.message?.content ?? null
+  } catch {
+    return null
+  }
+}

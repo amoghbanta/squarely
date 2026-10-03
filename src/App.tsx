@@ -144,6 +144,7 @@ export function App() {
       if (!on) setOutLevel(0)
     },
     onOutLevel: setOutLevel,
+    onUsage: (u) => game.recordUsage(u),
   })
 
   const connected = liveState === 'live'

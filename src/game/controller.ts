@@ -1063,6 +1063,21 @@ export class GameController {
     }
   }
 
+  // ---------- Token accounting (this page session) ----------
+  /** What Gemini Live really processed, per its own usage reports, split by modality. */
+  usage = { turns: 0, prompt: 0, response: 0, total: 0, promptText: 0, promptAudio: 0 }
+
+  recordUsage(u: { promptTokenCount?: number; responseTokenCount?: number; totalTokenCount?: number; promptTokensDetails?: { modality?: string; tokenCount?: number }[] }) {
+    this.usage.turns++
+    this.usage.prompt += u.promptTokenCount ?? 0
+    this.usage.response += u.responseTokenCount ?? 0
+    this.usage.total += u.totalTokenCount ?? 0
+    for (const d of u.promptTokensDetails ?? []) {
+      if (d.modality === 'TEXT') this.usage.promptText += d.tokenCount ?? 0
+      if (d.modality === 'AUDIO') this.usage.promptAudio += d.tokenCount ?? 0
+    }
+  }
+
   // ---------- Saved games: autosave, continue, pause, review ----------
   private gameId = newGameId()
   private gameStarted = Date.now()

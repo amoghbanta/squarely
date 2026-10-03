@@ -84,15 +84,6 @@ a { color: var(--tint); }
 }
 .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .brand h1 { margin: 0; font: 700 22px/1.1 var(--rounded); letter-spacing: -0.02em; }
-.tagline { margin: 2px 0 0; font-size: 13px; color: var(--label-2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.logo {
-  display: grid; place-items: center; width: 36px; height: 36px; flex: none;
-  border-radius: 10px; background: linear-gradient(160deg, #7d7aff, #5e5ce6); color: #fff; font-size: 22px;
-  box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.3);
-}
-.logo.big { width: 64px; height: 64px; border-radius: 16px; font-size: 38px; justify-self: center; }
-.top-actions { display: flex; align-items: center; gap: 6px; flex: none; }
-.hello { font-size: 15px; font-weight: 600; color: var(--label-2); margin-right: 4px; }
 .icon-btn {
   display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%;
   font-size: 20px; color: var(--tint); background: var(--fill);
@@ -203,7 +194,6 @@ a { color: var(--tint); }
 @keyframes float { 50% { transform: translateY(-1.5px); } }
 @media (prefers-reduced-motion: reduce) { .avatar * { animation: none !important; } }
 .logo-avatar { flex: none; }
-.hero-avatar { justify-self: center; }
 .msg { display: flex; gap: 8px; align-items: flex-end; }
 .msg.kid { justify-content: flex-end; }
 .msg-avatar { flex: none; margin-bottom: 2px; }
@@ -252,10 +242,6 @@ a { color: var(--tint); }
 .bubble.buddy { align-self: flex-start; background: var(--surface-2); border-bottom-left-radius: 6px; }
 .bubble.kid { align-self: flex-end; background: var(--tint); color: #fff; border-bottom-right-radius: 6px; }
 .bubble .receipts { display: flex; margin: 6px 0 0; }
-
-.chips { display: flex; flex-wrap: wrap; gap: 8px; }
-.chip { min-height: 44px; padding: 8px 14px; border-radius: 999px; background: var(--tint-soft); color: var(--tint); font-size: 14px; font-weight: 600; }
-.chip:active { transform: scale(0.97); }
 
 .group { display: grid; gap: 6px; }
 .group h3 { margin: 0 0 0 14px; font-size: 13px; font-weight: 400; text-transform: uppercase; letter-spacing: 0.02em; color: var(--label-2); }
@@ -347,8 +333,6 @@ a { color: var(--tint); }
 /* ---------- phones ---------- */
 @media (max-width: 899px) {
   .topbar { padding-left: 16px; padding-right: 16px; }
-  .tagline { display: none; }
-  .hello { display: none; }
   .layout { display: block; padding: 12px 12px calc(150px + env(safe-area-inset-bottom, 0px)); }
   .stage { gap: 12px; }
   .board { width: 100%; min-width: 0; border-radius: 14px; }
@@ -411,24 +395,6 @@ a { color: var(--tint); }
 @media (prefers-reduced-motion: reduce) {
   .scout-activity, .scout-activity * { animation: none !important; transition: none !important; }
 }
-
-/* Key screen: Google AI Studio call to action. */
-.studio-cta {
-  display: flex; align-items: center; gap: 12px; padding: 14px 16px; border-radius: 16px;
-  text-decoration: none; color: #fff; text-align: left;
-  background: linear-gradient(120deg, #4285f4, #9b72cb 55%, #d96570);
-  box-shadow: 0 8px 22px rgba(66, 133, 244, .3);
-  transition: transform .15s ease;
-}
-.studio-cta:hover { transform: translateY(-1px); }
-.studio-cta > span:nth-child(2) { display: flex; flex-direction: column; gap: 2px; flex: 1; }
-.studio-cta strong { font-size: 16px; }
-.studio-cta > span:nth-child(2) > span { font-size: 13px; opacity: .9; }
-.studio-badge { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px; background: rgba(255,255,255,.22); font-size: 20px; }
-.studio-steps { display: flex; gap: 8px; justify-content: center; padding: 0; margin: 0; list-style: none; counter-reset: s; font-size: 13px; color: var(--muted, #8e8e93); flex-wrap: wrap; }
-.studio-steps li { counter-increment: s; }
-.studio-steps li::before { content: counter(s); display: inline-grid; place-items: center; width: 18px; height: 18px; margin-right: 5px; border-radius: 50%; background: var(--fill, rgba(120,120,128,.16)); font-size: 11px; font-weight: 600; }
-.condense-note { margin: 0; padding: 10px 12px; border-radius: 12px; font-size: 13px; line-height: 1.4; background: var(--fill, rgba(120,120,128,.12)); text-align: left; }
 .cap-kid.heard { opacity: 0.6; font-style: italic; }
 
 /* Teaching visuals: the suggested move draws itself in green; grades pop onto the square. */
@@ -461,10 +427,6 @@ a { color: var(--tint); }
 @media (prefers-reduced-motion: reduce) {
   .board .piece.slide, .status.busy .dot, .mic.connecting, .trace li { animation: none !important; }
 }
-
-/* ---------- tutor next-step buttons ---------- */
-.hint-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; animation: rise 0.22s ease; }
-.hint-actions .primary, .hint-actions .pill-btn { min-height: 48px; padding: 0 22px; font-size: 17px; }
 
 /* ---------- game over ---------- */
 .over-card { position: relative; display: grid; justify-items: center; gap: 12px; text-align: center; overflow: hidden; }
@@ -523,16 +485,7 @@ a { color: var(--tint); }
 .puzzle-line.solved .pz-goal { color: #248a3d; }
 
 .sheet-card { max-width: 520px; max-height: min(88dvh, 860px); padding: 0 18px 22px; gap: 18px; align-content: start; }
-.sheet-head {
-  position: sticky; top: 0; z-index: 1; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  padding: 16px 0 8px; background: var(--surface);
-}
-.sheet-head h2 { font-size: 20px; }
 .link-btn.strong { justify-self: end; font-weight: 700; }
-.you-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
-.you-stats div { display: grid; justify-items: center; padding: 12px 6px; border-radius: 14px; background: var(--surface-2); }
-.you-stats b { font: 700 26px var(--rounded); }
-.you-stats span { font-size: 13px; color: var(--label-2); }
 .sheet-card .group { margin: 0; }
 
 @media (max-width: 899px) {
@@ -554,7 +507,6 @@ a { color: var(--tint); }
 .pz-steps i { width: 10px; height: 10px; border-radius: 50%; background: var(--fill-strong); transition: background 0.3s; }
 .pz-steps i.on { background: #34c759; }
 .pz-src { margin-left: auto; font-size: 13px; color: var(--label-3); text-decoration: none; }
-.pz-goal { margin: 0; font-size: 15px; color: var(--label-2); }
 .pz-menu select { width: auto; }
 
 /* ---------- one screen, no scrolling (desktop) ----------

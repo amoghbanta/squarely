@@ -151,7 +151,7 @@ export function humanize(e: TraceEntry): string {
     }
     if (t === 'Patterns found') return `Spotted patterns across ${o.mistakes} big slips: ${list(o.motifs) || 'none'}.`
     if (t.startsWith('condense')) return `condense.chat shrank the mistake log (${o.tokens_before} → ${o.tokens_after} tokens).`
-    if (t === 'Coach plan written') return `Gemini 3.8 Flash turned those facts into a practice plan: focus on ${motif(o.focus)}.`
+    if (t === 'Coach plan written') return `Gemini 3.8 Flash${o.via === 'condense.chat proxy' ? ', through the condense.chat proxy,' : ''} turned those facts into a practice plan: focus on ${motif(o.focus)}.`
     if (t === 'Plan skipped') return 'Could not write a plan this time; the patterns are still saved.'
     if (t === 'Failed') return `Something went wrong: ${d}`
     if (t.includes('skipped')) return `${t}.`

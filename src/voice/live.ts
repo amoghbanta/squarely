@@ -11,6 +11,7 @@ import {
   type FunctionDeclaration,
   type LiveServerMessage,
   type Session,
+  type UsageMetadata,
 } from '@google/genai'
 
 export const LIVE_MODEL = 'gemini-3.8-live'
@@ -28,6 +29,7 @@ export type LiveHandlers = {
   onSpeaking?: (speaking: boolean) => void
   onTurnComplete?: () => void
   onOutLevel?: (level: number) => void
+  onUsage?: (u: UsageMetadata) => void
 }
 
 const b64FromBuffer = (buf: ArrayBuffer) => {
@@ -194,6 +196,7 @@ export class LiveVoice {
   }
 
   private async onMessage(m: LiveServerMessage) {
+    if (m.usageMetadata) this.handlers.onUsage?.(m.usageMetadata)
     const sc = m.serverContent
     if (sc?.interrupted) this.flushPlayback()
     for (const p of sc?.modelTurn?.parts ?? []) {

@@ -6,7 +6,7 @@ import { GoogleGenAI, ThinkingLevel } from '@google/genai'
 import { StockfishEngine, type EngineLine } from '../engine/stockfish'
 import { classifyPunishment } from '../chess/motifs'
 import { BLUNDER_WIN_PROB_LOSS, winProb } from '../chess/facts'
-import { compress, flatten } from '../memory/condense'
+import { chatViaCondense, compress, flatten } from '../memory/condense'
 
 export const BRAIN_MODEL = 'gemini-3.8-flash'
 
@@ -156,30 +156,51 @@ export async function runScout(
         step('condense compressed the mistake log', { tokens_before: c.before, tokens_after: c.after })
       }
       const facts = { record, movesReviewed, mistakes, motifs, phases, ...(c ? { mistake_log: flatten(c.messages) } : { examples }) }
-      const ask = () => ai.models.generateContent({
-        model: BRAIN_MODEL,
-        contents: `FACTS (computed by a chess engine, the only truth you may use):\n${JSON.stringify(facts)}`,
-        config: {
-          systemInstruction:
-            'You are a kind chess coach writing a short practice plan for a child aged 6 to 12. Use ONLY the FACTS. Every tip must be about a motif that appears in FACTS.motifs and may mention an example by game and move number. Do not add any other chess claims, openings, or numbers that are not in FACTS. Simple words. buddy_line is one cheerful spoken sentence the chess buddy says to the child about what you found.',
-          thinkingConfig: { thinkingLevel: ThinkingLevel.LOW },
-          responseMimeType: 'application/json',
-          responseJsonSchema: {
-            type: 'object',
-            properties: {
-              headline: { type: 'string' },
-              focus: { type: 'string', enum: Object.keys(motifs).length ? Object.keys(motifs) : ['none'] },
-              tips: { type: 'array', items: { type: 'string' }, maxItems: 3 },
-              buddy_line: { type: 'string' },
-            },
-            required: ['headline', 'focus', 'tips', 'buddy_line'],
-          },
+      const system =
+        'You are a kind chess coach writing a short practice plan for a chess player (often a child). Use ONLY the FACTS. Every tip must be about a motif that appears in FACTS.motifs and may mention an example by game and move number. Do not add any other chess claims, openings, or numbers that are not in FACTS. Simple words. buddy_line is one cheerful spoken sentence the chess buddy says to the player about what you found.'
+      const user = `FACTS (computed by a chess engine, the only truth you may use):\n${JSON.stringify(facts)}`
+      const schema = {
+        type: 'object',
+        properties: {
+          headline: { type: 'string' },
+          focus: { type: 'string', enum: Object.keys(motifs).length ? Object.keys(motifs) : ['none'] },
+          tips: { type: 'array', items: { type: 'string' }, maxItems: 3 },
+          buddy_line: { type: 'string' },
         },
+        required: ['headline', 'focus', 'tips', 'buddy_line'],
+      }
+      // First choice: through the condense.chat proxy (it compresses the prompt on the way to Gemini).
+      const viaProxy = await chatViaCondense(apiKey, {
+        model: BRAIN_MODEL,
+        messages: [
+          { role: 'system', content: system },
+          { role: 'user', content: user },
+        ],
+        response_format: { type: 'json_schema', json_schema: { name: 'practice_plan', schema } },
       })
-      // One retry: a transient failure shouldn't cost the kid their plan.
-      const r = await ask().catch(() => ask())
-      report.plan = JSON.parse(r.text ?? 'null')
-      step('Coach plan written', { model: BRAIN_MODEL, focus: report.plan?.focus })
+      const proxied = (() => {
+        try {
+          return viaProxy ? (JSON.parse(viaProxy) as ScoutReport['plan']) : null
+        } catch {
+          return null
+        }
+      })()
+      if (proxied?.headline) {
+        report.plan = proxied
+        step('Coach plan written', { model: BRAIN_MODEL, via: 'condense.chat proxy', focus: proxied.focus })
+      } else {
+        // Fallback: Gemini directly from the browser.
+        const ask = () =>
+          ai.models.generateContent({
+            model: BRAIN_MODEL,
+            contents: user,
+            config: { systemInstruction: system, thinkingConfig: { thinkingLevel: ThinkingLevel.LOW }, responseMimeType: 'application/json', responseJsonSchema: schema },
+          })
+        // One retry: a transient failure shouldn't cost the player their plan.
+        const r = await ask().catch(() => ask())
+        report.plan = JSON.parse(r.text ?? 'null')
+        step('Coach plan written', { model: BRAIN_MODEL, via: 'Gemini directly', focus: report.plan?.focus })
+      }
     } catch (e) {
       step('Plan skipped', String(e))
     }

@@ -4,30 +4,28 @@
 
 **Chess you play by talking, with a coach that never makes things up.**
 
-Live: **https://squarely-chess.vercel.app**. Bring your own Gemini key; it goes straight from your browser to Google.
+Live: **https://squarely-chess.vercel.app** · Bring your own free Gemini key; it goes straight from your browser to Google.
 
-Squarely is a voice-first chess partner for anyone who has nobody to play and practise with: a kid at home after chess club, a beginner, a grown-up who wants a sparring partner. You talk to it like a friend ("move my horse to the middle", "what's attacking me?", "undo that"). It plays back at your level, asks you questions when you blunder instead of handing you the answer, and studies your online games to find what you keep getting wrong.
-
-It's kid-friendly by default, with a kids-mode toggle, and accessible out of the box: you never need to see the board, so blind and low-vision players can play eyes-closed.
+Squarely is a voice-first chess buddy for anyone with nobody to play and practise with: a complete beginner, a kid after chess club, a grown-up who wants a sparring partner, or someone who can't see the board. You talk to it like a friend ("teach me how the horse moves", "take his castle with my queen", "what's attacking me?", "give me a fork puzzle"). It teaches, plays at your level, pauses and asks a question when you blunder instead of handing you the answer, and studies your online games in the background to find what you keep getting wrong.
 
 Built in one day at the {Tech: Europe} × Google DeepMind Agentic AI Hack, Stockholm, 3 October 2026.
 
 <table>
   <tr>
-    <td width="62%"><img src="docs/images/tutor-desktop.png" alt="After a blunder, Squarely pauses the game, looks worried, highlights the bishop in danger, and the agent log explains each step in plain English"></td>
-    <td><img src="docs/images/phone-ask.png" alt="On a phone: 'move my horse to the middle' fits two moves, so Squarely points at both horses and asks which one"></td>
+    <td width="62%"><img src="docs/images/tutor-desktop.png" alt="After a blunder Squarely pauses, highlights the piece in danger and asks a question; the agent log explains each step in plain English"></td>
+    <td><img src="docs/images/phone-learn.png" alt="Learn mode on a phone: the horse lesson with its squares lit up and pawns to gobble"></td>
   </tr>
   <tr>
-    <td><sub><b>The tutor steps in.</b> Bishop to a6 drops the bishop (Stockfish: winning chances 53% → 6%). Squarely pauses, highlights the piece and asks a question instead of giving the answer. The agent log on the right shows every step in plain English.</sub></td>
-    <td><sub><b>It asks instead of guessing.</b> "Move my horse to the middle" fits two moves, so it points at both and reads the options out loud.</sub></td>
+    <td><sub><b>The tutor steps in.</b> A blunder drops a piece (Stockfish: winning chances fall sharply). Squarely pauses, highlights the piece and asks a question instead of giving the answer. Every step shows up in the agent log in plain English.</sub></td>
+    <td><sub><b>Learn mode for absolute beginners.</b> One piece at a time on an almost empty board: the rule in plain words, where it can go lit up, and a tiny task.</sub></td>
   </tr>
   <tr>
-    <td><img src="docs/images/scout-running.png" alt="The Scout agent studied 15 chess.com games in the background while the game went on"></td>
-    <td><img src="docs/images/phone-key.png" alt="Getting started: a free Gemini key from Google AI Studio"></td>
+    <td><img src="docs/images/puzzle-desktop.png" alt="A Lichess puzzle with the hint ladder, the progress rail and the coach panel"></td>
+    <td><img src="docs/images/phone-welcome.png" alt="Welcome screen with the Squarely mascot and a one-field setup"></td>
   </tr>
   <tr>
-    <td><sub><b>The Scout works in the background.</b> Say your chess.com name and a second agent fetches your games, checks every move with Stockfish and finds your recurring mistakes, while you keep playing.</sub></td>
-    <td><sub><b>Setup takes a minute.</b> Bring a free Gemini key from Google AI Studio. It goes straight from your browser to Google.</sub></td>
+    <td><sub><b>Voice puzzles from Lichess.</b> Hints climb a ladder (the idea, then which piece, then the move as a green arrow), all from the puzzle's real solution.</sub></td>
+    <td><sub><b>Setup takes a minute.</b> One free key from Google AI Studio, or play without one using an in-browser voice.</sub></td>
   </tr>
 </table>
 
@@ -35,56 +33,84 @@ Built in one day at the {Tech: Europe} × Google DeepMind Agentic AI Hack, Stock
 
 ## Why it's different
 
-- **The truth law.** The language model never judges a chess position. Every claim Squarely speaks (a threat, a piece in danger, who is winning, what you did wrong) comes from a tool result that chess.js or Stockfish computed in that turn. Each spoken line shows a **receipt** naming the tool that backs it (e.g. `✓ Tutor · Stockfish`). A chess coach that hallucinates is worse than none, especially for a child.
-- **An agent, not a chatbot.** The Gemini Live model decides what to do next. It might play the move, ask "which horse?", pause the game because you just blundered, or send a background agent to study your past games. Code computes every fact it says.
-- **Voice-first, for real.** Moves, hints, board reading, undo, new game, colours, piece styles, language, kids mode, parent summary and "forget me" all work by voice. Speak Swedish, Spanish or Hindi and it answers in your language.
+- **The truth law.** The language model never judges a chess position. Every claim Squarely speaks (a threat, a piece in danger, a good move, a grade, a rule) comes from a tool result computed by chess.js, Stockfish, a curated chess book or a puzzle's own solution. Each spoken line carries a **receipt** naming what backs it (`✓ Tutor · Stockfish`). A coach that hallucinates is worse than none, especially for a beginner or a child.
+- **An agent, not a chatbot.** Gemini 3.8 Live decides what to do next from 28 tools: play the move, ask "which horse?", pause the game after a blunder, open a lesson, start a puzzle, or send a second agent (the Scout) to study your games while you keep playing.
+- **Voice-first, for real.** Everything works by voice: moves, hints, lessons, puzzles, pause and resume, replays, board look, talk style and language. Speech-to-text mistakes are repaired in code ("night to G3" → knight; an impossible move gets "did you mean f3 or h3?" with numbered arrows), and garbled words are never turned into a guessed move.
+- **Teaches with eyes and ears.** "What's a good move for my queen?" draws a green arrow; "was that good?" grades the move like chess.com (book, best, great, inaccuracy, mistake, blunder) and shows the better one; "how does the horse move?" draws its moves.
+
+## What you can do
+
+| | |
+|---|---|
+| **Learn** | Six lessons, castle → bishop → queen → king → horse → pawn, each with a "gobble the pawns" task. Squarely offers lessons (not a game) when someone says they're new. |
+| **Play** | Stockfish at 5 levels (it picks weaker moves on purpose at low levels so you can win). Tap, drag or speak moves. Hints, grades, best-move arrows, openings by name. |
+| **Puzzles** | 280 kid-friendly Lichess puzzles in 7 themes. With no theme asked, it picks the kind of mistake Memory has seen you make. |
+| **Your games** | Every game autosaves; the app reopens where you left off. Pause/resume by voice. Replays step through your moves with grades and the engine's better move drawn. |
+| **Scout** | "My chess.com name is …": a background agent fetches your recent games, reviews every move with its own Stockfish worker, finds recurring mistakes, and Gemini 3.8 Flash writes a practice plan from those counts only. |
+| **Make it yours** | Talk style (to the point / balanced / chatty), friendly piece names for young players, board colours, piece styles incl. big letters and high contrast, 15 languages. |
 
 ## The agent
 
 ```mermaid
 flowchart LR
   P((Player speaks)) --> L["Gemini 3.8 Live<br/>orchestrator · native audio"]
-  L -->|make_move| R["Referee<br/>chess.js"]
-  R -->|ambiguous → ask<br/>illegal → explain| L
+  L -->|make_move + heard words| R["Referee<br/>chess.js + hearing repair"]
+  R -->|ambiguous / misheard → ask<br/>illegal → draw where it can go| L
   R --> T{"Tutor<br/>win-prob drop?"}
-  T -->|blunder: pause +<br/>hint facts| L
+  T -->|blunder: pause + exact-square hint facts| L
   T -->|fine| O["Opponent<br/>Stockfish WASM"]
   O --> L
-  L -->|analyse_position<br/>describe_board| F[("Board facts<br/>chess.js + Stockfish")]
-  L -.->|scout_games<br/>NON_BLOCKING| S["Scout agent<br/>chess.com → Stockfish review<br/>→ Gemini 3.8 Flash plan"]
-  S --> M[("Memory<br/>name · mistakes · plan")]
-  M -->|seeds next session| L
+  L -->|suggest / review / analyse<br/>explain_piece / chess_knowledge| F[("Facts<br/>chess.js · Stockfish · chess book")]
+  L -->|start_lesson / start_puzzle| Z["Lessons · Lichess puzzles"]
+  L -.->|scout_games · NON_BLOCKING| S["Scout agent<br/>chess.com → Stockfish review<br/>→ Gemini 3.8 Flash plan via condense proxy"]
+  S --> M[("Memory<br/>name · mistakes · plan · saved games")]
+  M -->|compressed by condense,<br/>seeds the next session| L
   L -->|voice + receipts + board arrows| P
 ```
 
 | Role | Implemented by | What it decides / computes |
 |---|---|---|
-| **Voice orchestrator** | Gemini 3.8 Live (`gemini-3.8-live`), function calling | What to do next; phrases tool results in the player's language |
-| **Referee** | chess.js (`src/chess/resolver.ts`) | Turns "the horse near my king" / "pawn in front of my king, two steps" into exactly one legal move, or asks a clarifying question |
-| **Tutor** | Stockfish 19 WASM + chess.js (`src/chess/motifs.ts`) | Spots blunders by win-probability drop, classifies them (fork, hanging piece, piece in danger incl. discovered attacks, mate threat) and pauses the game with hint facts, at most once every 3 moves |
-| **Opponent** | Stockfish 19 WASM (`src/engine/stockfish.ts`) | MultiPV + softmax over centipawn loss, so level 1 really does let you win sometimes |
-| **Scout** | Background agent (`src/scout/scout.ts`) | Fetches your recent chess.com games, reviews every one of your moves on its own engine worker, counts recurring mistakes, then Gemini 3.8 Flash writes a practice plan **from those counts only** |
-| **Memory** | localStorage (+ condense.chat) | Name, record, recurring mistakes, Scout plan, compressed notes from past sessions |
+| **Voice orchestrator** | Gemini 3.8 Live (`gemini-3.8-live`), function calling | What to do next; phrases tool results in the player's language and talk style |
+| **Referee** | chess.js (`src/chess/resolver.ts`, `src/chess/hearing.ts`) | Turns "the horse near my king" or "move it to c4" into exactly one legal move; repairs misheard words; asks instead of guessing |
+| **Tutor** | Stockfish 19 WASM + chess.js (`src/chess/motifs.ts`, `teach.ts`) | Blunders by win-probability drop, classified (fork, hanging piece, discovered attack, mate threat) with exact squares and "now vs. after their move"; move grades; best-move arrows |
+| **Opponent** | Stockfish 19 WASM (`src/engine/stockfish.ts`) | MultiPV + softmax over centipawn loss, so level 1 really lets you win |
+| **Teacher** | `src/chess/lessons.ts`, `knowledge.ts`, `puzzles.ts` | Lessons, a curated chess book (30 openings, 19 tactics and rules), Lichess puzzles with a hint ladder from the real solution |
+| **Scout** | Background agent (`src/scout/scout.ts`) | chess.com games → Stockfish review of every move → recurring mistakes → Gemini 3.8 Flash plan (through the condense proxy) |
+| **Memory** | localStorage + condense.chat | Name, record, mistakes, Scout plan, saved games, lessons done, compressed notes from past sessions |
 
-**14 tools** (`src/agent/tools.ts`): `make_move`, `engine_reply`, `analyse_position`, `describe_board`, `undo`, `remember`, `game_summary`, `set_level`, `scout_games`, `new_game`, `change_settings`, `show_screen`, `stop_listening`, `forget_me`.
+**28 tools** (`src/agent/tools.ts`): `make_move`, `engine_reply`, `analyse_position`, `suggest_move`, `review_move`, `chess_knowledge`, `explain_piece`, `describe_board`, `undo`, `new_game`, `set_level`, `start_lesson`, `stop_lesson`, `start_puzzle`, `puzzle_hint`, `stop_puzzle`, `pause_game`, `resume_game`, `open_game`, `review_step`, `stop_review`, `scout_games`, `remember`, `game_summary`, `change_settings`, `show_screen`, `stop_listening`, `forget_me`.
 
-The **Agent** tab shows every tool call live, with the role that handled it and its latency.
+The **Agent steps** tab shows every tool call live, in plain English, with the role that handled it and its latency.
+
+## Partner technology
+
+- **Google DeepMind / Gemini API (core).** `gemini-3.8-live` is the real-time voice agent: native audio, barge-in tuned for kids (fast to interrupt, patient before answering), input/output transcription, BLOCKING and NON_BLOCKING tools with `WHEN_IDLE` scheduling, session resumption and context compression. `gemini-3.8-flash` (structured JSON, low thinking) writes the Scout's practice plan. Calls go browser → Google with the visitor's own key via `@google/genai`.
+- **condense.chat.** Three places in the app, plus the build itself:
+  1. **Proxy:** the Scout's Gemini Flash call goes through condense's OpenAI-compatible proxy (`X-Condense-Upstream-Url` → Gemini), which compresses the prompt on the way. It falls back to Gemini directly if condense is unavailable.
+  2. **Long-term memory:** past conversations are compressed with `/v1/compress` into notes that seed every new Live session's instructions.
+  3. **Scout mistake log:** the full annotated log is compressed before Gemini reads it.
+  4. **The build:** Squarely was written with a coding agent routed through the `dense` CLI: **481.7M → 188.8M tokens (61% smaller), $109 → $57**.
+  - The condense key stays server-side in `api/condense.js` (condense blocks browser calls). Measured in-app savings are below.
+- **OpenCode / MatrixOS** were not used.
+
+### Measured token savings (one session)
+
+Measured with `scripts/e2e/live-token-session.js` on 3 October 2026: one real Gemini Live session with 2 short games, 3 puzzles with hints and a Scout run over 15 chess.com games (32 model turns, 29 tool calls).
+
+| | Without condense | With condense | |
+|---|---|---|---|
+| Session memory, 5 compressions as the conversation grew | 1,553 tokens | 858 tokens | **−45%** |
+| Scout's annotated mistake log (read by Gemini 3.8 Flash) | 2,039 tokens | 937 tokens | **−54%** |
+| **All text condense handled in the session** | **3,592 tokens** | **1,795 tokens** | **−50%** |
+| Building Squarely itself (coding agent through `dense`) | 481.7M tokens · $109 | 188.8M tokens · $57 | **−61%** |
+
+What this means for a free AI Studio key: the memory and Scout work fits about **twice** into the same quota. To be precise about scope, Gemini Live itself processed about 655K tokens in that session (most of it the live audio and conversation context, streamed straight to Google), and that stream doesn't pass through condense, so the whole-session saving is about 1%. The compressed memory also rides in every later session's instructions, so the saving repeats on every turn after the first session.
 
 ## Accessibility
 
-- Eyes-closed play: Squarely always says *where* it moved and reads clarification options aloud. "Read the board", "where is my king?" and "what did you just move?" are all supported.
-- Full keyboard play on the board (arrows + Enter), with screen-reader announcements for every move and for the board cursor.
-- High-contrast board and big-letter pieces, which you can switch to by voice.
-- Dialogs trap focus and close with Escape. Reduced-motion is respected.
-
-## Partner technology (honest usage)
-
-- **Google DeepMind / Gemini API (core).** `gemini-3.8-live` is the real-time voice agent: native audio, barge-in, input and output transcription, function calling with BLOCKING and NON_BLOCKING tools, session resumption and context compression. `gemini-3.8-flash` (structured JSON output, low thinking) writes the Scout's practice plan. Calls go browser → Google with the visitor's own key via `@google/genai`.
-- **condense.chat.**
-  - Squarely itself was built through condense: the coding agent's traffic ran through the `dense` proxy.
-  - In the app, `api/condense.js` (a Vercel function that holds the condense key, since condense blocks browser calls) compresses past conversations into long-term memory that seeds the next Live session. It also compresses the Scout's full annotated mistake log before Gemini reads it. Token savings show under Settings → Memory and in the Agent trace.
-  - The in-app integration needs an organisation-tier condense key in `CONDENSE_API_KEY`. Without it, Squarely runs uncompressed.
-- **OpenCode / MatrixOS** were not used.
+- Eyes-closed play: Squarely always says where it moved, reads clarification options aloud, and answers "read the board", "where is my king?", "what's attacking me?".
+- Full keyboard play (arrows + Enter) with screen-reader announcements; drag-and-drop and tap-tap for pointer users.
+- High-contrast board and big-letter pieces, switchable by voice. Dialogs trap focus and close with Escape; reduced motion is respected.
 
 ## Run locally
 
@@ -94,10 +120,9 @@ npm run dev        # http://localhost:5173
 npm run build      # type-check + production build into dist/
 ```
 
-- Requires Node 20+.
-- `npm run dev` and `npm run build` first copy the single-threaded Stockfish build from `node_modules/stockfish` into `public/stockfish/`. It needs no cross-origin-isolation headers, so any static host works.
-- Paste a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) when the app asks, or choose **Play without voice** to type moves (offline mode drives the same tools with a keyword parser and template replies).
-- Optional: set `CONDENSE_API_KEY` in Vercel to switch on condense compression.
+- Requires Node 20+. `npm run dev` / `build` copy the single-threaded Stockfish build from `node_modules/stockfish` into `public/stockfish/` (no cross-origin-isolation headers needed).
+- Paste a Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey), or choose **Play without a key**: offline mode drives the same tools with a keyword parser, browser speech recognition and Kokoro-82M speaking in the browser.
+- Optional condense.chat: put `CONDENSE_API_KEY=…` in an untracked `.env` (or your shell). The dev server serves `api/condense.js` locally; on Vercel set the same variable.
 
 ### Deploy
 
@@ -105,59 +130,47 @@ npm run build      # type-check + production build into dist/
 vercel deploy --prod
 ```
 
-Static Vite build plus one serverless function (`api/condense.js`).
+A static Vite build plus one serverless function (`api/condense.js`).
 
 ## Project layout
 
 ```
 src/
-  voice/live.ts        Gemini Live session: 16 kHz mic worklet → Live → 24 kHz playback, tool dispatch, resume
-  agent/tools.ts       Tool declarations + dispatcher (the agent's whole action surface)
-  agent/prompt.ts      System instruction: truth law, kids / grown-up mode, language, memory
-  agent/offline.ts     No-network fallback: keyword parser + template phrasing
-  game/controller.ts   Game state; Referee, Tutor, Opponent, Memory, Scout orchestration; trace; pointing
-  chess/resolver.ts    Kid language → one legal move, or a question
-  chess/motifs.ts      Blunder classifier (shared by Tutor and Scout)
-  chess/facts.ts       chess.js facts: threats, hanging pieces, plain-language square locations
-  engine/stockfish.ts  UCI wrapper over the Stockfish WASM worker (MultiPV, timeouts)
-  scout/scout.ts       Background game-review agent
-  memory/              localStorage profile + condense client
-  ui/                  Board (SVG), Avatar, panels, settings
-api/condense.js        Serverless relay to condense.chat
-scripts/e2e/           Headless-Chromium end-to-end checks over CDP
+  voice/live.ts         Gemini Live: 16 kHz mic worklet → Live → 24 kHz playback, tools, resume, usage
+  voice/localVoice.ts   No-key voice: Kokoro-82M in a worker (system voice while it loads)
+  voice/browserEars.ts  No-key listening: Web Speech API, echo-guarded
+  agent/tools.ts        28 tool declarations + dispatcher (the agent's whole action surface)
+  agent/prompt.ts       System instruction: truth law, style, talk style, language, memory
+  agent/offline.ts      No-network fallback: keyword parser + template phrasing
+  game/controller.ts    Game, puzzles, lessons, saved games, Referee/Tutor/Opponent/Memory/Scout, trace
+  chess/                resolver (words → one legal move), hearing (misheard-word repair), motifs (blunder
+                        classifier), teach (grades, move facts), knowledge (chess book), lessons, puzzles
+  engine/stockfish.ts   UCI wrapper over the Stockfish WASM worker
+  scout/scout.ts        Background game-review agent
+  memory/               Profile, saved games, condense client
+  ui/                   Board (SVG, drag), Avatar, rails, sheets, controls
+api/condense.js         Serverless relay to condense.chat (compress + proxy)
+scripts/                Stockfish copy, Lichess puzzle builder, headless e2e checks
 ```
-
-## Known issues
-
-**Gemini Live can drift between languages mid-conversation.** With the model left to "reply in the language the player speaks", `gemini-3.8-live` sometimes switched language on its own between turns. A single borrowed word, an accent, or a mis-transcribed phrase was enough, even when the player never changed language. For a child, or for someone playing with their eyes closed, a sudden switch is confusing.
-
-What Squarely does about it:
-- **The language is locked.** The default is English. The system instruction tells the model to speak only that language, whatever words the player uses.
-- **Switching is explicit.** The player asks by name ("can you speak Swedish?"), or picks a language in Settings. The model has to call `change_settings(language)` before it speaks the new language, so every switch appears in the agent trace.
-- **The lock survives reconnects.** The stored instruction is refreshed on every switch, so a Live session rotation (`goAway` → resume) can't revert to an old language.
-- The old "Auto (follow me)" setting is gone. A saved `auto` is migrated to English.
-
-`scripts/e2e/live-swedish.js` checks this: a Swedish word inside English stays English, "can you speak Swedish?" switches, and "speak English again" switches back. This is a prompt-level guard, not a model setting, so drift is now rare but not impossible. If it happens, say "speak English" to snap it back.
 
 ## Testing
 
-`scripts/e2e/` drives the real app in headless Chromium. It covers:
-- Offline tool regressions: ambiguity, settings, race between a voice move and New game, playing black, undo, illegal moves.
-- Mate, promotion and castling.
-- Live-voice scenarios: the tutor blunder → hint → fix beat, eyes-closed play, every setting by voice, and the language lock (stays put, switches only when asked).
+`scripts/e2e/` drives the real app in headless Chromium over CDP (see `scripts/e2e/README.md`):
 
-See `scripts/e2e/README.md`.
+- Offline suites (no key): tool regressions, puzzles, lessons, saved games, drag-and-drop, misheard moves and the hearing repair (over 130 checks).
+- Live-voice scenarios with a key: the tutor beat, eyes-closed play, settings by voice, the language lock, puzzles by voice, misheard moves, the beginner flow, and a full measured token session.
 
-## Tech
+## Known issues
 
-Vite + React 19 + TypeScript, chess.js 1.4, Stockfish.js 19 (lite, single-threaded WASM), `@google/genai`, Vercel.
+- **Gemini Live can drift between languages.** The language is locked (English by default) and only changes when the player asks by name; switches go through `change_settings` and survive reconnects. Drift is now rare but not impossible; "speak English" snaps it back.
+- **Voice in noisy rooms.** Echo cancellation and tuned turn detection help, but a headset works best.
 
 ## Credits and licences
 
 Squarely's own code is [MIT](LICENSE). The pieces below keep their own licences.
 
-- [Stockfish.js](https://github.com/nmrugg/stockfish.js) (GPLv3) by Nathan Rugg / Chess.com, based on [Stockfish](https://github.com/official-stockfish/Stockfish). It's loaded as a separate, unmodified worker file.
+- [Stockfish.js](https://github.com/nmrugg/stockfish.js) (GPLv3) by Nathan Rugg / Chess.com, based on [Stockfish](https://github.com/official-stockfish/Stockfish), loaded as a separate, unmodified worker file.
 - [chess.js](https://github.com/jhlywa/chess.js) (BSD-2).
-- Puzzles: a 280-puzzle, kid-friendly slice of the [Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0), rebuilt with `scripts/build-puzzles.py`.
-- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) via [kokoro-js](https://www.npmjs.com/package/kokoro-js) (Apache-2.0): the voice when there's no Gemini key.
+- Puzzles: a 280-puzzle slice of the [Lichess puzzle database](https://database.lichess.org/#puzzles) (CC0), rebuilt with `scripts/build-puzzles.py`.
+- [Kokoro-82M](https://huggingface.co/hexgrad/Kokoro-82M) via [kokoro-js](https://www.npmjs.com/package/kokoro-js) (Apache-2.0).
 - Game data from the public [chess.com API](https://www.chess.com/news/view/published-data-api).
