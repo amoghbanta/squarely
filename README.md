@@ -51,7 +51,7 @@ Built in one day at the {Tech: Europe} × Google DeepMind Agentic AI Hack, Stock
 
 ## The agent
 
-<p align="center"><img src="docs/images/tech.png" alt="Squarely under the hood: you talk to Gemini 3.8 Live, which drives 28 tools across six roles (Referee, Tutor, Opponent, Teacher, Scout, Memory). Every fact comes from code, and the details are all handled." width="100%"></p>
+<p align="center"><img src="docs/images/tech.png" alt="Squarely under the hood: two agents. Squarely (Gemini 3.8 Live) talks with you and calls 28 tools; it starts the Scout (Gemini 3.8 Flash via condense.chat) in the background to study your chess.com games. Code works out every fact." width="100%"></p>
 
 ```mermaid
 flowchart LR
