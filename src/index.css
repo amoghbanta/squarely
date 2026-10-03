@@ -141,3 +141,6 @@ main.with-trace { grid-template-columns: minmax(0, 1fr) 420px; }
 .help { margin: 0; padding-left: 1.1em; display: grid; gap: 8px; }
 .switch { display: flex; align-items: center; gap: 6px; font-weight: 800; }
 .switch input { width: 20px; height: 20px; accent-color: var(--accent-2); }
+
+.problem { display: flex; gap: 10px; align-items: center; justify-content: space-between; width: 100%; padding: 10px 14px; border-radius: 14px; background: #fff1e8; color: #7a2e00; border: 2px solid #ffb48a; font-weight: 700; }
+@media (prefers-color-scheme: dark) { .problem { background: #3a1d10; color: #ffd2b8; border-color: #8a3b14; } }

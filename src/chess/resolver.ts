@@ -1,7 +1,9 @@
 // Referee: turns a structured kid intent ("horse to the middle") into exactly one LEGAL move,
 // or a clarifying question, or a fact-based reason it can't be played. Never guesses.
 import { Chess, type Move, type PieceSymbol, type Square } from 'chess.js'
-import { nameOf, kingSquare, whereIs } from './facts'
+import { nameOf, kingSquare, pieces, whereIs } from './facts'
+
+const SQUARES_OF = (chess: Chess, color: 'w' | 'b', type: PieceSymbol) => pieces(chess, color).filter((q) => chess.get(q)!.type === type)
 
 export type PieceWord = 'pawn' | 'knight' | 'bishop' | 'rook' | 'queen' | 'king'
 
@@ -11,7 +13,8 @@ export type MoveIntent = {
   to?: string
   capture?: PieceWord
   area?: 'middle' | 'left' | 'right' | 'forward'
-  which?: 'left' | 'right' | 'near_king' | 'front' | 'back'
+  which?: 'left' | 'right' | 'near_king' | 'front' | 'back' | 'in_front_of_king' | 'in_front_of_queen'
+  steps?: number // squares moved forward, e.g. a pawn's two-step start
   castle?: 'short' | 'long'
   promotion?: PieceWord
   san?: string
@@ -72,10 +75,21 @@ export function resolveMove(chess: Chess, intent: MoveIntent, pending: MoveOptio
     cands = cands.filter((m) => (intent.area === 'left' ? leftward(m) : !leftward(m) && m.to[0] !== m.from[0]))
   }
 
+  if (intent.steps) cands = cands.filter((m) => Math.abs(rankOf(m.to) - rankOf(m.from)) === intent.steps)
   cands = narrowByWhich(chess, cands, intent.which)
 
   if (cands.length === 1) return { status: 'ok', move: cands[0] }
   if (cands.length === 0) return explainIllegal(chess, intent, legal)
+
+  // Too many to list out loud: ask a narrowing question instead of reading a long menu.
+  if (new Set(cands.map((m) => m.from)).size > 3 && !isSquare(intent.to)) {
+    const name = nameOf(cands[0].piece)
+    return {
+      status: 'ask',
+      question: `Which ${name}? You could say which side it's on, which square it should go to, or "the one in front of my king".`,
+      options: [],
+    }
+  }
 
   // Several legal moves fit: ask, describing them by piece position, not notation.
   const options = cands.slice(0, 4).map((m) => ({ label: describeMove(m, me), san: m.san }))
@@ -94,6 +108,13 @@ function narrowByWhich(chess: Chess, cands: Move[], which?: MoveIntent['which'])
   const me = chess.turn()
   const froms = [...new Set(cands.map((m) => m.from))]
   if (froms.length < 2) return cands
+  if (which === 'in_front_of_king' || which === 'in_front_of_queen') {
+    const target = which === 'in_front_of_king' ? 'k' : 'q'
+    const sq = SQUARES_OF(chess, me, target)[0]
+    if (!sq) return cands
+    const onFile = cands.filter((m) => m.from[0] === sq[0])
+    return onFile.length ? onFile : cands
+  }
   const key = (s: Square): number => {
     const f = me === 'w' ? fileOf(s) : 7 - fileOf(s)
     const r = me === 'w' ? rankOf(s) : 7 - rankOf(s)

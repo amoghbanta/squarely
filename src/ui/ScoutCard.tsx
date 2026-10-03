@@ -11,9 +11,9 @@ const MOTIF_LABEL: Record<string, string> = {
   loses_material: 'Other big slips',
 }
 
-type Props = { report: ScoutReport | null; scouting: boolean; saved: Profile['scout']; onScout: (username: string) => void }
+type Props = { report: ScoutReport | null; scouting: boolean; progress: string; saved: Profile['scout']; onScout: (username: string) => void }
 
-export function ScoutCard({ report, scouting, saved, onScout }: Props) {
+export function ScoutCard({ report, scouting, progress, saved, onScout }: Props) {
   const [name, setName] = useState('')
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -34,11 +34,15 @@ export function ScoutCard({ report, scouting, saved, onScout }: Props) {
           </button>
         </form>
       )}
-      {scouting && <p className="small">The Scout is reviewing every move in the background. Keep playing!</p>}
+      {scouting && (
+        <p className="small" aria-live="polite">
+          {progress.replace(/^Reviewed game (\d+)\/(\d+)/, 'Reviewed game $1 of $2')} · keep playing, the Scout works in the background.
+        </p>
+      )}
       {report && (
         <div className="scout-stats">
           <p>
-            <b>{report.games}</b> games · <b>{report.movesReviewed}</b> moves reviewed · won {report.record.wins}, lost {report.record.losses}
+            <b>{report.games}</b> games · <b>{report.movesReviewed}</b> moves reviewed · won {report.record.wins}, lost {report.record.losses}{report.record.draws ? `, drew ${report.record.draws}` : ''}
           </p>
           <ul>
             {Object.entries(report.motifs)

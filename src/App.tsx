@@ -126,6 +126,18 @@ export function App() {
     game.closePanel()
   }, [s.panel])
 
+  // Turn raw failures into something a parent can fix in one step.
+  const problem =
+    liveState === 'error' || (liveState === 'closed' && liveDetail)
+      ? /api key|permission_denied|unauthenticated|401|403/i.test(liveDetail)
+        ? { text: "That Gemini key didn't work. Check it in Google AI Studio, then paste it again.", action: 'key' as const }
+        : /notallowed|permission|denied|notfound|microphone/i.test(liveDetail)
+          ? { text: 'Squarely needs the microphone. Allow it in the address bar, or type your moves below.', action: 'retry' as const }
+          : /quota|resource_exhausted|429/i.test(liveDetail)
+            ? { text: 'This Gemini key is out of quota for now. Try again in a minute, or use another key.', action: 'key' as const }
+            : { text: 'Lost the connection to Gemini. Tap to reconnect; your game is safe.', action: 'retry' as const }
+      : null
+
   const setKids = (on: boolean) => {
     game.changeSettings({ kids_mode: on })
     if (connected) voice.current!.sendEvent(modeSwitchNote(on))
@@ -248,6 +260,20 @@ export function App() {
               <input id="say" value={text} onChange={(e) => setText(e.target.value)} placeholder={connected ? 'Or type: horse to the middle' : 'Offline: type "knight f3", "undo", "what\'s attacking me?"'} />
               <button type="submit">Say</button>
             </form>
+            {problem && (
+              <div className="problem" role="alert">
+                <span>{problem.text}</span>
+                {problem.action === 'key' ? (
+                  <button className="ghost" onClick={forgetKey}>
+                    Change key
+                  </button>
+                ) : (
+                  <button className="ghost" onClick={() => void start()}>
+                    Reconnect
+                  </button>
+                )}
+              </div>
+            )}
             <div className="live-state">
               {LIVE_MODEL} · {liveState}
               {liveDetail && liveState !== 'live' ? ` · ${liveDetail.slice(0, 80)}` : ''}
@@ -277,6 +303,7 @@ export function App() {
           <ScoutCard
             report={s.scoutReport}
             scouting={s.scouting}
+            progress={s.scoutProgress}
             saved={s.profile.scout}
             onScout={(username) =>
               connected

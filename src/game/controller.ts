@@ -56,6 +56,7 @@ export type GameSnapshot = {
   level: number
   scoutReport: ScoutReport | null
   scouting: boolean
+  scoutProgress: string
   kidsMode: boolean
   pendingOptions: MoveOption[] | null
   checkSquare: Square | null
@@ -107,6 +108,7 @@ export class GameController {
   summaryLine: string | null = null
   private scoutReport: ScoutReport | null = null
   private scouting = false
+  private scoutProgress = ''
   private pending: MoveOption[] | null = null
   private lastMove: { from: Square; to: Square } | null = null
   private trace: TraceEntry[] = []
@@ -158,6 +160,7 @@ export class GameController {
       summaryLine: this.summaryLine,
       micOffSeq: this.micOffSeq,
       scouting: this.scouting,
+      scoutProgress: this.scoutProgress,
       pendingOptions: this.pending,
       checkSquare: c.inCheck() ? kingSquare(c, c.turn()) : null,
     }
@@ -484,7 +487,10 @@ export class GameController {
     this.emit()
     const t0 = performance.now()
     try {
-      const report = await runScout(source, this.apiKey, (title, detail) => this.log('Scout', title, detail))
+      const report = await runScout(source, this.apiKey, (title, detail) => {
+        this.scoutProgress = title
+        this.log('Scout', title, detail)
+      })
       this.scoutReport = report
       // Memory learns the recurring mistakes, so the Tutor and the next session know them.
       // Replaced (not added) on each run, so re-scouting the same games doesn't double-count.
