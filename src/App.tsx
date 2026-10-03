@@ -7,7 +7,8 @@ import { LiveVoice, LIVE_MODEL, type LiveState } from './voice/live'
 import { runTool, toolDeclarations } from './agent/tools'
 import { modeSwitchNote, systemInstruction } from './agent/prompt'
 import { parseOffline, phraseOffline } from './agent/offline'
-import { resetProfile } from './memory/store'
+import { Modal } from './ui/Modal'
+import { BOARD_THEMES, PIECE_STYLES } from './ui/themes'
 import { ScoutCard } from './ui/ScoutCard'
 
 const KEY_STORE = 'squarely.geminiKey'
@@ -30,16 +31,10 @@ export function App() {
   const [speaking, setSpeaking] = useState(false)
   const [level, setLevelUi] = useState(0)
   const [text, setText] = useState('')
-  const [showTrace, setShowTrace] = useState(true)
-  const [summary, setSummary] = useState<string | null>(null)
   const voice = useRef<LiveVoice | null>(null)
 
   voice.current ??= new LiveVoice({
-    onToolCall: async (fc) => {
-      const r = await runTool(game, fc)
-      if (fc.name === 'game_summary') setSummary(String(r.parent_line))
-      return r
-    },
+    onToolCall: (fc) => runTool(game, fc),
     onTranscript: (who, t) => game.addTranscript(who, t),
     onState: (st, detail) => {
       setLiveState(st)
@@ -51,6 +46,7 @@ export function App() {
   })
 
   const connected = liveState === 'live'
+  const modalOpen = !apiKey || !!s.panel
   const hasKey = apiKey.trim().length > 0
   game.apiKey = hasKey ? apiKey.trim() : null
 
@@ -99,7 +95,6 @@ export function App() {
     const call = parseOffline(t)
     if (!call) return speakLocal('I only know chess words offline. Try "horse to the middle" or "undo".')
     const r = await runTool(game, call)
-    if (call.name === 'game_summary') setSummary(String(r.parent_line))
     speakLocal(phraseOffline(call.name!, r))
   }
 
@@ -110,12 +105,31 @@ export function App() {
     else speakLocal(phraseOffline('make_move', r))
   }
 
+  // Voice can switch the mic off ("stop listening"); the UI owns the mic.
   useEffect(() => {
-    if (s.over && !summary) {
-      const r = game.gameSummary()
-      setSummary(r.parent_line)
-    }
-  }, [s.over, summary])
+    if (!s.micOffSeq) return
+    const t = setTimeout(() => {
+      voice.current?.stopMic()
+      setMicOn(false)
+    }, 1500) // let the goodbye finish
+    return () => clearTimeout(t)
+  }, [s.micOffSeq])
+
+  useEffect(() => {
+    if (!connected) setMicOn(false)
+  }, [connected])
+
+  // "Show me what the Scout found": bring the Scout card into view.
+  useEffect(() => {
+    if (s.panel !== 'scout') return
+    void document.querySelector('.scout')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    game.closePanel()
+  }, [s.panel])
+
+  const setKids = (on: boolean) => {
+    game.changeSettings({ kids_mode: on })
+    if (connected) voice.current!.sendEvent(modeSwitchNote(on))
+  }
 
   const saveKey = (e: FormEvent) => {
     e.preventDefault()
@@ -163,36 +177,57 @@ export function App() {
         <div className="hdr-right">
           {s.profile.name && <span className="hello">Hi, {s.profile.name}!</span>}
           <label className="switch">
-            <input
-              type="checkbox"
-              checked={s.kidsMode}
-              onChange={(e) => {
-                game.setKidsMode(e.target.checked)
-                if (connected) voice.current!.sendEvent(modeSwitchNote(e.target.checked))
-              }}
-            />{' '}
-            Kids mode
+            <input type="checkbox" checked={s.kidsMode} onChange={(e) => setKids(e.target.checked)} /> Kids mode
           </label>
-          <label>
-            Buddy level
-            <select value={s.level} onChange={(e) => game.setLevel(Number(e.target.value))}>
-              {[1, 2, 3, 4, 5].map((l) => (
-                <option key={l}>{l}</option>
-              ))}
-            </select>
-          </label>
-          <button className="ghost" onClick={() => setShowTrace((v) => !v)}>
-            {showTrace ? 'Hide' : 'Show'} agent trace
+          <details className="settings">
+            <summary>🎨 Look &amp; level</summary>
+            <div className="settings-body">
+              <label>
+                Board
+                <select value={s.settings.boardTheme} onChange={(e) => game.changeSettings({ board_theme: e.target.value })}>
+                  {Object.entries(BOARD_THEMES).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Pieces
+                <select value={s.settings.pieceStyle} onChange={(e) => game.changeSettings({ piece_style: e.target.value })}>
+                  {Object.entries(PIECE_STYLES).map(([k, v]) => (
+                    <option key={k} value={k}>
+                      {v}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Buddy level
+                <select value={s.level} onChange={(e) => game.changeSettings({ level: Number(e.target.value) })}>
+                  {[1, 2, 3, 4, 5].map((l) => (
+                    <option key={l}>{l}</option>
+                  ))}
+                </select>
+              </label>
+              <p className="small">Or just say it: "make the board blue", "animal pieces".</p>
+            </div>
+          </details>
+          <button className="ghost" onClick={() => game.changeSettings({ show_agent_trace: !s.settings.showTrace })}>
+            {s.settings.showTrace ? 'Hide' : 'Show'} agent trace
+          </button>
+          <button className="ghost" onClick={() => game.showPanel('help')} aria-label="What can I say?">
+            ?
           </button>
         </div>
       </header>
 
-      <main className={showTrace ? 'with-trace' : ''}>
+      <main className={s.settings.showTrace ? 'with-trace' : ''} inert={modalOpen}>
         <section className="play">
           <div className="status" aria-hidden>
             {status}
           </div>
-          <Board kidsMode={s.kidsMode} fen={s.fen} pov={s.kidColor} lastMove={s.lastMove} checkSquare={s.checkSquare} disabled={s.thinking || !!s.over} onMove={onBoardMove} />
+          <Board kidsMode={s.kidsMode} boardTheme={s.settings.boardTheme} pieceStyle={s.settings.pieceStyle} fen={s.fen} pov={s.kidColor} lastMove={s.lastMove} checkSquare={s.checkSquare} disabled={s.thinking || !!s.over} onMove={onBoardMove} />
 
           <div className="controls">
             <button
@@ -246,19 +281,22 @@ export function App() {
             onScout={(username) =>
               connected
                 ? voice.current!.sendText(`My chess.com username is ${username}`)
-                : void runTool(game, { name: 'scout_games', args: { username } }).then((r) => speakLocal(String((r.plan as { buddy_line?: string } | null)?.buddy_line ?? 'I studied your games!')))
+                : void runTool(game, { name: 'scout_games', args: { username } }).then((r) => speakLocal(phraseOffline('scout_games', r)))
             }
           />
 
           <div className="footer-actions">
-            <button className="ghost" onClick={() => setSummary(game.gameSummary().parent_line)}>
+            <button className="ghost" onClick={() => game.showPanel('parent_summary')}>
               Parent summary
             </button>
-            <button className="ghost" onClick={() => game.newGame()}>
+            <button className="ghost" onClick={() => void game.newGame()}>
               New game
             </button>
-            <button className="ghost" onClick={() => (resetProfile(), location.reload())}>
-              Forget kid
+            <button className="ghost" onClick={() => void game.newGame(s.kidColor === 'w' ? 'black' : 'white')}>
+              Play as {s.kidColor === 'w' ? 'black' : 'white'}
+            </button>
+            <button className="ghost" onClick={() => (game.forgetMe(true), location.reload())}>
+              Forget me
             </button>
             {apiKey && (
               <button className="ghost" onClick={forgetKey}>
@@ -268,7 +306,7 @@ export function App() {
           </div>
         </section>
 
-        {showTrace && <TracePanel trace={s.trace} />}
+        {s.settings.showTrace && <TracePanel trace={s.trace} />}
       </main>
 
       <div className="sr-only" aria-live="polite" aria-atomic="true">
@@ -276,8 +314,8 @@ export function App() {
       </div>
 
       {!apiKey && (
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="keytitle">
-          <form onSubmit={saveKey} className="card">
+        <Modal title="Bring your Gemini key">
+          <form onSubmit={saveKey} className="stack">
             <h2 id="keytitle">Bring your Gemini key</h2>
             <p>
               Squarely talks with Gemini Live straight from your browser. Paste a key from{' '}
@@ -297,18 +335,31 @@ export function App() {
               </button>
             </div>
           </form>
-        </div>
+        </Modal>
       )}
 
-      {summary && (
-        <div className="modal" role="dialog" aria-modal="true" aria-labelledby="sumtitle">
-          <div className="card">
-            <h2 id="sumtitle">For grown-ups 👋</h2>
-            <p className="summary">{summary}</p>
-            <p className="small">Every fact above was computed by chess.js and Stockfish, not guessed by the AI.</p>
-            <button onClick={() => setSummary(null)}>Close</button>
-          </div>
-        </div>
+      {s.panel === 'summary' && s.summaryLine && (
+        <Modal title="For grown-ups" onClose={game.closePanel}>
+          <h2>For grown-ups 👋</h2>
+          <p className="summary">{s.summaryLine}</p>
+          <p className="small">Every fact above was computed by chess.js and Stockfish, not guessed by the AI.</p>
+          <button onClick={game.closePanel}>Close</button>
+        </Modal>
+      )}
+
+      {s.panel === 'help' && (
+        <Modal title="What you can say" onClose={game.closePanel}>
+          <h2>Just say it 🎤</h2>
+          <ul className="help">
+            <li><b>Move:</b> "horse to the middle", "take his castle with my queen", "pawn to e4", "castle"</li>
+            <li><b>Oops:</b> "undo", "keep it"</li>
+            <li><b>Look around:</b> "what's attacking me?", "where is my king?", "read the board", "what did you just move?"</li>
+            <li><b>Change things:</b> "make the board blue", "animal pieces", "big letters", "high contrast", "turn off kids mode", "make it harder"</li>
+            <li><b>Games:</b> "new game", "let me play black", "my chess.com username is …"</li>
+            <li><b>Grown-ups:</b> "show the parent summary", "hide the agent trace", "forget me", "stop listening"</li>
+          </ul>
+          <button onClick={game.closePanel}>Got it</button>
+        </Modal>
       )}
     </div>
   )

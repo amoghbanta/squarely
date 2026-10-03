@@ -77,11 +77,19 @@ export class LiveVoice {
       },
       callbacks: {
         onopen: () => this.handlers.onState('live'),
-        onerror: (e) => this.handlers.onState('error', String((e as ErrorEvent).message ?? e)),
-        onclose: (e) => this.handlers.onState('closed', e.reason),
+        onerror: (e) => this.dropSession('error', String((e as ErrorEvent).message ?? e)),
+        onclose: (e) => this.dropSession('closed', e.reason),
         onmessage: (m) => void this.onMessage(m),
       },
     })
+  }
+
+  /** The socket is gone: release the mic and let the next tap reconnect (resuming the session). */
+  private dropSession(state: LiveState, detail?: string) {
+    this.session = null
+    this.stopMic()
+    this.flushPlayback()
+    this.handlers.onState(state, detail)
   }
 
   private async onMessage(m: LiveServerMessage) {
@@ -144,8 +152,18 @@ export class LiveVoice {
     this.handlers.onSpeaking?.(false)
   }
 
-  async startMic() {
-    if (this.micOn) return
+  private micStarting: Promise<void> | null = null
+
+  startMic() {
+    // Guard double taps: one in-flight start, one stream.
+    if (this.micOn) return Promise.resolve()
+    this.micStarting ??= this.openMic().finally(() => {
+      this.micStarting = null
+    })
+    return this.micStarting
+  }
+
+  private async openMic() {
     this.micStream = await navigator.mediaDevices.getUserMedia({
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: 1 },
     })
@@ -170,7 +188,11 @@ export class LiveVoice {
     this.micStream = null
     this.micCtx = null
     this.micOn = false
-    this.session?.sendRealtimeInput({ audioStreamEnd: true })
+    try {
+      this.session?.sendRealtimeInput({ audioStreamEnd: true })
+    } catch {
+      /* socket already closed */
+    }
   }
 
   /** Typed fallback: same session, same tools, no mic needed. */
@@ -190,8 +212,9 @@ export class LiveVoice {
   close() {
     this.stopMic()
     this.flushPlayback()
-    this.session?.close()
+    const s = this.session
     this.session = null
+    s?.close()
     this.handlers.onState('closed')
   }
 }

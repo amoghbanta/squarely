@@ -20,11 +20,15 @@ export class StockfishEngine {
   private listeners = new Set<(line: string) => void>()
   private chain: Promise<unknown> = Promise.resolve()
   private ready: Promise<void>
+  private failed: Error | null = null
 
   constructor(url = '/stockfish/stockfish-19-lite-single.js') {
     this.worker = new Worker(url)
     this.worker.onmessage = (e: MessageEvent<string>) => {
       for (const l of this.listeners) l(String(e.data))
+    }
+    this.worker.onerror = (e) => {
+      this.failed = new Error(`engine failed to load: ${e.message}`)
     }
     this.ready = (async () => {
       await this.waitFor('uci', (l) => l === 'uciok')
@@ -36,11 +40,19 @@ export class StockfishEngine {
     this.worker.postMessage(cmd)
   }
 
-  private waitFor(cmd: string, done: (line: string) => boolean, collect?: (line: string) => void) {
-    return new Promise<void>((resolve) => {
+  /** Send a command and wait for its terminating line. Times out so a dead worker can't hang a tool call. */
+  private waitFor(cmd: string, done: (line: string) => boolean, collect?: (line: string) => void, timeoutMs = 15000) {
+    return new Promise<void>((resolve, reject) => {
+      if (this.failed) return reject(this.failed)
+      const timer = setTimeout(() => {
+        this.listeners.delete(fn)
+        if (cmd.startsWith('go')) this.send('stop')
+        reject(this.failed ?? new Error(`engine timeout on "${cmd}"`))
+      }, timeoutMs)
       const fn = (line: string) => {
         collect?.(line)
         if (done(line)) {
+          clearTimeout(timer)
           this.listeners.delete(fn)
           resolve()
         }

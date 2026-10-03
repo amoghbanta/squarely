@@ -18,7 +18,8 @@ import {
 } from '../chess/facts'
 import { resolveMove, type MoveIntent, type MoveOption } from '../chess/resolver'
 import { classifyPunishment, type Punishment } from '../chess/motifs'
-import { loadProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
+import { loadProfile, resetProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
+import { BOARD_THEMES, PIECE_STYLES, isBoardTheme, isPieceStyle, type BoardTheme, type PieceStyle } from '../ui/themes'
 import { runScout, type ScoutReport, type ScoutSource } from '../scout/scout'
 
 export type Role = 'Voice' | 'Referee' | 'Opponent' | 'Tutor' | 'Memory' | 'Board' | 'Scout'
@@ -58,6 +59,30 @@ export type GameSnapshot = {
   kidsMode: boolean
   pendingOptions: MoveOption[] | null
   checkSquare: Square | null
+  settings: Settings
+  panel: Panel
+  summaryLine: string | null
+  micOffSeq: number
+}
+
+export type Panel = 'summary' | 'scout' | 'help' | null
+export type Settings = { boardTheme: BoardTheme; pieceStyle: PieceStyle; showTrace: boolean }
+
+const SETTINGS_KEY = 'squarely.settings.v1'
+const loadSettings = (): Settings => {
+  const d: Settings = { boardTheme: 'meadow', pieceStyle: 'friends', showTrace: true }
+  try {
+    return { ...d, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>) }
+  } catch {
+    return d
+  }
+}
+const saveSettings = (v: Settings) => {
+  try {
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(v))
+  } catch {
+    /* best-effort */
+  }
 }
 
 const HINT_COOLDOWN_KID_MOVES = 3
@@ -77,6 +102,9 @@ export class GameController {
   profile: Profile = loadProfile()
   apiKey: string | null = null
   kidsMode = readKidsMode()
+  settings: Settings = loadSettings()
+  panel: Panel = null
+  summaryLine: string | null = null
   private scoutReport: ScoutReport | null = null
   private scouting = false
   private pending: MoveOption[] | null = null
@@ -125,6 +153,10 @@ export class GameController {
       level: this.level,
       scoutReport: this.scoutReport,
       kidsMode: this.kidsMode,
+      settings: this.settings,
+      panel: this.panel,
+      summaryLine: this.summaryLine,
+      micOffSeq: this.micOffSeq,
       scouting: this.scouting,
       pendingOptions: this.pending,
       checkSquare: c.inCheck() ? kingSquare(c, c.turn()) : null,
@@ -148,7 +180,8 @@ export class GameController {
   }
 
   private say(text: string) {
-    this.announce = text
+    // Toggle an invisible suffix so screen readers re-read identical announcements.
+    this.announce = this.announce === text ? `${text}\u200b` : text
   }
 
   // ---------- evaluation ----------
@@ -189,18 +222,42 @@ export class GameController {
   }
 
   // ---------- Referee + Tutor: the kid's move ----------
-  async makeMove(intent: MoveIntent): Promise<Record<string, unknown>> {
+  /** Every board-changing action runs one at a time: voice, taps and the engine can't interleave. */
+  private lock: Promise<unknown> = Promise.resolve()
+  private exclusive<T>(fn: () => Promise<T> | T): Promise<T> {
+    const run = this.lock.then(fn).finally(() => {
+      if (this.thinking) {
+        this.thinking = false
+        this.emit()
+      }
+    })
+    this.lock = run.catch(() => undefined)
+    return run
+  }
+
+  makeMove(intent: MoveIntent) {
+    return this.exclusive(() => this.makeMoveInner(intent))
+  }
+
+  opponentMove() {
+    return this.exclusive(() => this.opponentMoveInner())
+  }
+
+  private async makeMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
     if (this.overReason()) return { status: 'game_over', reason: this.overReason() }
     if (this.chess.turn() !== this.kidColor) return { status: 'not_your_turn' }
     const t0 = performance.now()
     const r = resolveMove(this.chess, intent, this.pending)
     if (r.status === 'ask') {
       this.pending = r.options
+      this.say(`${r.question} ${r.options.map((o, i) => `${i + 1}: ${o.label}`).join('. ')}`)
       this.log('Referee', 'Ambiguous → ask kid', { question: r.question, options: r.options.map((o) => o.san) }, performance.now() - t0)
       return { status: 'need_clarification', question: r.question, options: r.options.map((o, i) => ({ option: i + 1, ...o })) }
     }
     if (r.status === 'illegal') {
       this.log('Referee', 'Rejected: not legal', r.reason, performance.now() - t0)
+      this.say(`That move isn't allowed: ${r.reason}.`)
+      this.emit()
       return { status: 'not_legal', reason: r.reason, facts: r.facts }
     }
     this.pending = null
@@ -249,6 +306,7 @@ export class GameController {
     if (blunder && canHint) {
       this.lastHintAtKidMove = kidMoveIdx
       this.hintOpen = true
+      this.say(`${this.announce} Wait! Something is in danger. Say undo to try again, or keep going.`)
       this.thinking = false
       this.emit()
       return {
@@ -264,7 +322,7 @@ export class GameController {
       }
     }
 
-    const opp = await this.opponentMove()
+    const opp = await this.opponentMoveInner()
     return {
       status: 'played',
       you_played: you,
@@ -280,7 +338,7 @@ export class GameController {
   }
 
   // ---------- Opponent ----------
-  async opponentMove(): Promise<Record<string, unknown>> {
+  private async opponentMoveInner(): Promise<Record<string, unknown>> {
     if (this.overReason() || this.chess.turn() === this.kidColor) return { status: 'not_opponent_turn' }
     this.thinking = true
     this.emit()
@@ -328,7 +386,8 @@ export class GameController {
     const feeling = wp > 0.8 ? 'kid is winning' : wp > 0.6 ? 'kid is a bit ahead' : wp > 0.4 ? 'about equal' : wp > 0.2 ? 'opponent is a bit ahead' : 'opponent is winning'
     const m = material(c)
     const out = {
-      engine_eval_pawns: this.kidsMode ? undefined : Math.round(cp) / 100,
+      engine_eval_pawns: this.kidsMode || Math.abs(cp) > 90000 ? undefined : Math.round(cp) / 100,
+      forced_mate: Math.abs(cp) > 90000 ? { by: cp > 0 ? 'you' : 'opponent', in_moves: 100000 - Math.abs(cp) } : undefined,
       in_check: c.inCheck() && c.turn() === this.kidColor,
       your_pieces_under_attack: threats,
       enemy_pieces_you_can_win: targets,
@@ -360,11 +419,15 @@ export class GameController {
     return out
   }
 
-  undo(): Record<string, unknown> {
+  undo() {
+    return this.exclusive(() => this.undoInner())
+  }
+
+  private undoInner(): Record<string, unknown> {
     const h = this.chess.history({ verbose: true })
-    if (!h.length) return { status: 'nothing_to_undo' }
+    // Only undo if the player has a move to take back (never the buddy's opening move as black).
+    if (!h.some((m) => m.color === this.kidColor)) return { status: 'nothing_to_undo' }
     const undone: string[] = []
-    // Take back the opponent's reply too, so it's the kid's turn again.
     if (h[h.length - 1].color !== this.kidColor) undone.push(this.chess.undo()!.san)
     const k = this.chess.undo()
     if (k) undone.push(k.san)
@@ -410,6 +473,8 @@ export class GameController {
     this.profile = p
     saveProfile(p)
     this.log('Memory', 'Game recorded', { over })
+    this.summaryLine = this.gameSummary().parent_line
+    this.panel = 'summary'
   }
 
   // ---------- Scout (background agent) ----------
@@ -422,11 +487,10 @@ export class GameController {
       const report = await runScout(source, this.apiKey, (title, detail) => this.log('Scout', title, detail))
       this.scoutReport = report
       // Memory learns the recurring mistakes, so the Tutor and the next session know them.
-      const mistakes = { ...this.profile.mistakes }
-      for (const [k, v] of Object.entries(report.motifs)) mistakes[k] = (mistakes[k] ?? 0) + v
+      // Replaced (not added) on each run, so re-scouting the same games doesn't double-count.
       this.profile = {
         ...this.profile,
-        mistakes,
+        scoutMistakes: report.motifs,
         scout: report.plan
           ? { username: report.username, at: Date.now(), headline: report.plan.headline, focus: report.plan.focus, tips: report.plan.tips }
           : this.profile.scout,
@@ -496,7 +560,12 @@ export class GameController {
     return { status: 'ok', level: this.level }
   }
 
-  newGame() {
+  newGame(color?: 'white' | 'black') {
+    return this.exclusive(() => this.newGameInner(color))
+  }
+
+  private async newGameInner(color?: 'white' | 'black') {
+    if (color) this.kidColor = color === 'black' ? 'b' : 'w'
     this.chess = new Chess()
     this.lastMove = null
     this.pending = null
@@ -504,9 +573,66 @@ export class GameController {
     this.lastHintAtKidMove = -99
     this.hintOpen = false
     this.gameRecorded = false
-    this.say('New game! You play white. Your move.')
-    this.log('Referee', 'New game')
-    return { status: 'new_game', you_play: colorName(this.kidColor) }
+    this.panel = null
+    this.say(`New game! You play ${colorName(this.kidColor)}.`)
+    this.log('Referee', 'New game', { you_play: colorName(this.kidColor) })
+    // Playing black: the buddy opens.
+    this.thinking = false
+    const opening = this.kidColor === 'b' ? await this.opponentMoveInner() : undefined
+    return { status: 'new_game', you_play: colorName(this.kidColor), opponent_played: opening }
+  }
+
+  // ---------- Settings & screens (all reachable by voice) ----------
+  changeSettings(args: Record<string, unknown>): Record<string, unknown> {
+    const changed: Record<string, unknown> = {}
+    if (isBoardTheme(args.board_theme)) changed.board_theme = this.settings.boardTheme = args.board_theme
+    if (isPieceStyle(args.piece_style)) changed.piece_style = this.settings.pieceStyle = args.piece_style
+    if (typeof args.show_agent_trace === 'boolean') changed.show_agent_trace = this.settings.showTrace = args.show_agent_trace
+    if (typeof args.kids_mode === 'boolean') changed.kids_mode = this.setKidsMode(args.kids_mode).kids_mode
+    if (typeof args.level === 'number') changed.level = this.setLevel(args.level).level
+    this.settings = { ...this.settings }
+    saveSettings(this.settings)
+    this.log('Board', 'Settings changed', changed)
+    return {
+      status: Object.keys(changed).length ? 'ok' : 'nothing_changed',
+      changed,
+      options: { board_theme: Object.keys(BOARD_THEMES), piece_style: Object.keys(PIECE_STYLES) },
+    }
+  }
+
+  showPanel(panel: string): Record<string, unknown> {
+    let summary: Record<string, unknown> | undefined
+    if (panel === 'parent_summary') {
+      const r = this.gameSummary()
+      summary = r
+      this.summaryLine = r.parent_line
+      this.panel = 'summary'
+    } else if (panel === 'scout') this.panel = 'scout'
+    else if (panel === 'help') this.panel = 'help'
+    else this.panel = null
+    this.log('Board', `Show ${panel}`)
+    return { status: 'ok', showing: this.panel ?? 'game', summary }
+  }
+
+  /** Voice asked to stop listening; the UI owns the mic, so it watches this counter. */
+  micOffSeq = 0
+  requestMicOff() {
+    this.micOffSeq++
+    this.emit()
+  }
+
+  closePanel() {
+    this.panel = null
+    this.emit()
+  }
+
+  forgetMe(confirm: boolean): Record<string, unknown> {
+    if (!confirm) return { status: 'need_confirmation', note: 'Ask the player to confirm first: this erases their name and history.' }
+    resetProfile()
+    this.profile = loadProfile()
+    this.scoutReport = null
+    this.log('Memory', 'Profile erased')
+    return { status: 'erased' }
   }
 }
 

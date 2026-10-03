@@ -59,7 +59,7 @@ export function resolveMove(chess: Chess, intent: MoveIntent, pending: MoveOptio
   if (isSquare(intent.from)) cands = cands.filter((m) => m.from === intent.from!.toLowerCase())
   if (isSquare(intent.to)) cands = cands.filter((m) => m.to === intent.to!.toLowerCase())
   if (intent.capture) cands = cands.filter((m) => m.captured === SYM[intent.capture!])
-  if (intent.promotion) cands = cands.filter((m) => !m.promotion || m.promotion === SYM[intent.promotion!])
+  if (intent.promotion) cands = cands.filter((m) => m.promotion === SYM[intent.promotion!])
   else cands = cands.filter((m) => !m.promotion || m.promotion === 'q')
 
   if (intent.area === 'middle') {
@@ -103,8 +103,10 @@ function narrowByWhich(chess: Chess, cands: Move[], which?: MoveIntent['which'])
     if (which === 'back') return r
     return dist(s, kingSquare(chess, me)) // near_king
   }
-  const pick = froms.sort((a, b) => key(a) - key(b))[0]
-  return cands.filter((m) => m.from === pick)
+  const sorted = froms.sort((a, b) => key(a) - key(b))
+  // A tie (e.g. two pieces equally "left") stays ambiguous, so the Referee asks instead of guessing.
+  if (key(sorted[0]) === key(sorted[1])) return cands.filter((m) => key(m.from) === key(sorted[0]))
+  return cands.filter((m) => m.from === sorted[0])
 }
 
 function describeMove(m: Move, pov: 'w' | 'b'): string {

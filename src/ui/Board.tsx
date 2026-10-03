@@ -1,13 +1,16 @@
 // Big, bright SVG board. Pieces are characters with faces. Fully keyboard-playable (arrows + Enter).
 import { Chess, type Color, type Square } from 'chess.js'
-import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { CHARACTER } from '../chess/facts'
 
+import { ANIMAL, BOARD_THEMES, GLYPH, LETTER, type BoardTheme, type PieceStyle } from './themes'
+
 const PLAIN: Record<string, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' }
-const GLYPH: Record<string, string> = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' }
 
 type Props = {
   kidsMode: boolean
+  boardTheme: BoardTheme
+  pieceStyle: PieceStyle
   fen: string
   pov: Color
   lastMove: { from: Square; to: Square } | null
@@ -22,11 +25,14 @@ const sqAt = (col: number, row: number, pov: Color): Square => {
   return `${'abcdefgh'[file]}${rank + 1}` as Square
 }
 
-export function Board({ kidsMode, fen, pov, lastMove, checkSquare, disabled, onMove }: Props) {
+export function Board({ kidsMode, boardTheme, pieceStyle, fen, pov, lastMove, checkSquare, disabled, onMove }: Props) {
   const chess = useMemo(() => new Chess(fen), [fen])
   const [selected, setSelected] = useState<Square | null>(null)
   const [cursor, setCursor] = useState<[number, number]>([4, 6])
   const ref = useRef<SVGSVGElement>(null)
+  const [focused, setFocused] = useState(false)
+  // A new position (voice move, engine reply, undo) clears any half-made tap selection.
+  useEffect(() => setSelected(null), [fen])
 
   const targets = useMemo(
     () => (selected ? new Set(chess.moves({ square: selected, verbose: true }).map((m) => m.to)) : new Set<string>()),
@@ -68,6 +74,7 @@ export function Board({ kidsMode, fen, pov, lastMove, checkSquare, disabled, onM
   const cursorLabel = `${cursorSq}: ${cursorPiece ? `${cursorPiece.color === pov ? 'your' : "buddy's"} ${kidsMode ? CHARACTER[cursorPiece.type] : PLAIN[cursorPiece.type]}` : 'empty'}${selected ? `. Selected ${selected}` : ''}`
 
   return (
+    <>
     <svg
       ref={ref}
       className="board"
@@ -77,6 +84,9 @@ export function Board({ kidsMode, fen, pov, lastMove, checkSquare, disabled, onM
       aria-label={`Chess board. Use arrow keys and Enter to move. ${cursorLabel}`}
       tabIndex={0}
       onKeyDown={onKey}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      style={{ ['--light-sq' as string]: BOARD_THEMES[boardTheme].light, ['--dark-sq' as string]: BOARD_THEMES[boardTheme].dark }}
     >
       {Array.from({ length: 64 }, (_, i) => {
         const col = i % 8
@@ -96,16 +106,32 @@ export function Board({ kidsMode, fen, pov, lastMove, checkSquare, disabled, onM
             {p && (
               <g className={`piece ${p.color === 'w' ? 'pw' : 'pb'}`}>
                 <title>{`${p.color === pov ? 'Your' : "Buddy's"} ${kidsMode ? CHARACTER[p.type] : PLAIN[p.type]}`}</title>
-                <text x="50" y="80" textAnchor="middle" className="glyph">
-                  {GLYPH[p.type]}
-                </text>
-                {/* googly eyes (kids mode) */}
-                {kidsMode && (
+                {pieceStyle === 'animals' ? (
                   <>
-                <circle cx="41" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
-                <circle cx="59" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
-                <circle cx="42.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
-                <circle cx="60.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
+                    <circle cx="50" cy="50" r="40" className="disc" />
+                    <text x="50" y="68" textAnchor="middle" className="emoji">
+                      {ANIMAL[p.type]}
+                    </text>
+                  </>
+                ) : pieceStyle === 'letters' ? (
+                  <>
+                    <circle cx="50" cy="50" r="40" className="disc" />
+                    <text x="50" y="70" textAnchor="middle" className="letter">
+                      {LETTER[p.type]}
+                    </text>
+                  </>
+                ) : (
+                  <text x="50" y="80" textAnchor="middle" className="glyph">
+                    {GLYPH[p.type]}
+                  </text>
+                )}
+                {/* googly eyes */}
+                {pieceStyle === 'friends' && (
+                  <>
+                    <circle cx="41" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
+                    <circle cx="59" cy={p.type === 'p' ? 52 : 46} r="6.5" className="eye" />
+                    <circle cx="42.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
+                    <circle cx="60.5" cy={p.type === 'p' ? 53 : 47} r="3" className="pupil" />
                   </>
                 )}
               </g>
@@ -117,5 +143,10 @@ export function Board({ kidsMode, fen, pov, lastMove, checkSquare, disabled, onM
         )
       })}
     </svg>
+    {/* Screen readers don't reliably re-read a changing aria-label, so the cursor is announced here. */}
+    <div className="sr-only" aria-live="polite">
+      {focused ? cursorLabel : ''}
+    </div>
+    </>
   )
 }

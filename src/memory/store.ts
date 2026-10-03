@@ -6,7 +6,8 @@ export type Profile = {
   wins: number
   losses: number
   draws: number
-  mistakes: Record<string, number> // e.g. { fork: 2, hanging_piece: 3 }
+  mistakes: Record<string, number> // from games played here, e.g. { fork: 2 }
+  scoutMistakes: Record<string, number> // from the latest Scout run over online games
   notes: string[] // short facts the kid shared ("likes horses")
   lastSummary: string | null
   scout: { username: string; at: number; headline: string; focus: string; tips: string[] } | null
@@ -21,6 +22,7 @@ const empty = (): Profile => ({
   losses: 0,
   draws: 0,
   mistakes: {},
+  scoutMistakes: {},
   notes: [],
   lastSummary: null,
   scout: null,
@@ -53,7 +55,10 @@ export function resetProfile() {
 
 /** Most frequent recurring mistakes, for the tutor and the system prompt. */
 export function topMistakes(p: Profile, n = 2): string[] {
-  return Object.entries(p.mistakes)
+  const all: Record<string, number> = { ...p.scoutMistakes }
+  for (const [k, v] of Object.entries(p.mistakes)) all[k] = (all[k] ?? 0) + v
+  return Object.entries(all)
+    .filter(([k]) => k !== 'loses_material')
     .sort((a, b) => b[1] - a[1])
     .slice(0, n)
     .map(([k]) => k)

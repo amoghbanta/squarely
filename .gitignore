@@ -30,3 +30,4 @@ dist-ssr
 
 # copied from node_modules/stockfish at predev/prebuild
 public/stockfish
+.vercel

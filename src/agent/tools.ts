@@ -2,6 +2,7 @@
 import { Behavior, type FunctionCall, type FunctionDeclaration } from '@google/genai'
 import type { GameController } from '../game/controller'
 import type { MoveIntent } from '../chess/resolver'
+import { BOARD_THEMES, PIECE_STYLES } from '../ui/themes'
 
 const PIECES = ['pawn', 'knight', 'bishop', 'rook', 'queen', 'king']
 
@@ -90,8 +91,42 @@ export const toolDeclarations: FunctionDeclaration[] = [
   {
     name: 'new_game',
     behavior: Behavior.BLOCKING,
-    description: 'Start a new game.',
+    description: 'Start a new game. The player may choose to play white or black.',
+    parametersJsonSchema: { type: 'object', properties: { color: { type: 'string', enum: ['white', 'black'] } } },
+  },
+  {
+    name: 'change_settings',
+    behavior: Behavior.BLOCKING,
+    description:
+      'Change how the app looks or behaves: board colours, piece style, kids mode, buddy level, or showing the agent trace panel. Use for "make the board blue", "animal pieces", "turn off kids mode", "make it harder". Only pass the fields to change.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        board_theme: { type: 'string', enum: Object.keys(BOARD_THEMES), description: 'meadow=green, ocean=blue, candy=pink, wood=brown, space=dark, contrast=high contrast for low vision' },
+        piece_style: { type: 'string', enum: Object.keys(PIECE_STYLES), description: 'friends=pieces with faces, classic, animals, letters=big letters (easy to see)' },
+        kids_mode: { type: 'boolean' },
+        level: { type: 'integer', description: '1 easiest to 5 hardest' },
+        show_agent_trace: { type: 'boolean' },
+      },
+    },
+  },
+  {
+    name: 'show_screen',
+    behavior: Behavior.BLOCKING,
+    description: 'Open or close a screen: parent_summary (report for grown-ups), scout (game-study results), help (what you can say), or game (close any popup).',
+    parametersJsonSchema: { type: 'object', properties: { screen: { type: 'string', enum: ['parent_summary', 'scout', 'help', 'game'] } }, required: ['screen'] },
+  },
+  {
+    name: 'stop_listening',
+    behavior: Behavior.BLOCKING,
+    description: 'Turn the microphone off when the player says goodbye, "stop listening" or "pause". Say a short goodbye first.',
     parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'forget_me',
+    behavior: Behavior.BLOCKING,
+    description: 'Erase the player\'s name, history and Scout results. Ask "are you sure?" first and only pass confirm=true after they say yes.',
+    parametersJsonSchema: { type: 'object', properties: { confirm: { type: 'boolean' } }, required: ['confirm'] },
   },
 ]
 
@@ -114,13 +149,13 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       result = game.describeBoard(String(args.focus ?? 'all'))
       break
     case 'undo':
-      result = game.undo()
+      result = await game.undo()
       break
     case 'remember':
       result = game.remember(String(args.kind ?? 'fact'), String(args.value ?? ''))
       break
     case 'game_summary':
-      result = game.gameSummary()
+      result = game.showPanel('parent_summary')
       break
     case 'set_level':
       result = game.setLevel(Number(args.level ?? 2))
@@ -129,7 +164,20 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       result = await game.scout({ site: 'chesscom', username: String(args.username ?? '') })
       break
     case 'new_game':
-      result = game.newGame()
+      result = await game.newGame(args.color === 'black' || args.color === 'white' ? args.color : undefined)
+      break
+    case 'change_settings':
+      result = game.changeSettings(args)
+      break
+    case 'show_screen':
+      result = game.showPanel(String(args.screen ?? 'game'))
+      break
+    case 'stop_listening':
+      game.requestMicOff()
+      result = { status: 'mic_off' }
+      break
+    case 'forget_me':
+      result = game.forgetMe(args.confirm === true)
       break
     default:
       result = { error: `unknown tool ${call.name}` }

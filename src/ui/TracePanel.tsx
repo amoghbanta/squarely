@@ -3,12 +3,14 @@ import { useEffect, useRef } from 'react'
 import type { TraceEntry } from '../game/controller'
 
 export function TracePanel({ trace }: { trace: TraceEntry[] }) {
-  const end = useRef<HTMLDivElement>(null)
+  const box = useRef<HTMLElement>(null)
+  // Scroll the panel itself; scrollIntoView would drag the whole page down on phones.
   useEffect(() => {
-    void end.current?.scrollIntoView({ block: 'end' })
+    const el = box.current
+    if (el) el.scrollTop = el.scrollHeight
   }, [trace.length])
   return (
-    <section className="trace" aria-label="Agent trace">
+    <section className="trace" aria-label="Agent trace" ref={box}>
       <h2>Agent trace</h2>
       <ol>
         {trace.map((e) => (
@@ -20,7 +22,6 @@ export function TracePanel({ trace }: { trace: TraceEntry[] }) {
           </li>
         ))}
       </ol>
-      <div ref={end} />
     </section>
   )
 }
