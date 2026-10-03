@@ -72,6 +72,8 @@ export class LiveVoice {
         inputAudioTranscription: {},
         outputAudioTranscription: {},
         speechConfig: { voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } } },
+        // Thoughts must never be spoken to the player.
+        thinkingConfig: { includeThoughts: false },
         contextWindowCompression: { slidingWindow: {} },
         sessionResumption: { handle: this.resumeHandle },
       },
