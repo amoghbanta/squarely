@@ -7,6 +7,8 @@ import { LESSONS } from './chess/lessons'
 import { PUZZLE_THEMES, THEME_INFO, type PuzzleTheme } from './chess/puzzles'
 import { Board } from './ui/Board'
 import { MoveStrip } from './ui/MoveStrip'
+import { GameRail } from './ui/GameRail'
+import { identifyOpening } from './chess/knowledge'
 import { ScoutActivity } from './ui/ScoutActivity'
 import { TracePanel } from './ui/TracePanel'
 import { LiveVoice, LIVE_MODEL, type LiveState } from './voice/live'
@@ -117,6 +119,7 @@ export function App() {
   const [tab, setTab] = useState<Tab>(() => (game.settings.showTrace ? 'agent' : 'chat'))
   const [sheetOpen, setSheetOpen] = useState(false)
   const [youOpen, setYouOpen] = useState(false)
+  const [youTab, setYouTab] = useState<'games' | 'settings' | 'scout'>('games')
   const voice = useRef<LiveVoice | null>(null)
 
   voice.current ??= new LiveVoice({
@@ -337,6 +340,7 @@ export function App() {
   // "Show me what the Scout found": the Scout lives in the You sheet.
   useEffect(() => {
     if (s.panel !== 'scout') return
+    setYouTab('scout')
     setYouOpen(true)
     game.closePanel()
   }, [s.panel])
@@ -648,6 +652,33 @@ export function App() {
       </header>
 
       <main className="layout" inert={modalOpen}>
+        {!phone && (
+          <GameRail
+            moves={s.moves}
+            kidColor={s.kidColor}
+            fen={s.fen}
+            turn={s.turn}
+            name={s.profile.name ?? 'You'}
+            level={s.level}
+            opening={s.review?.opening ?? identifyOpening(s.moves.map((m) => m.san))?.name ?? null}
+            progress={
+              s.lesson
+                ? {
+                    title: 'Lessons',
+                    items: LESSONS.map((l) => ({ label: l.title, done: (s.profile.lessonsDone ?? []).includes(l.id), current: l.id === s.lesson!.id })),
+                  }
+                : s.puzzle
+                  ? {
+                      title: 'Puzzles',
+                      items: PUZZLE_THEMES.map((t) => {
+                        const st = s.profile.puzzles.byTheme[t]
+                        return { label: THEME_INFO[t].label, detail: st ? `${st.solved} of ${st.tried}` : undefined, done: !!st?.solved, current: t === s.puzzle!.theme }
+                      }),
+                    }
+                  : null
+            }
+          />
+        )}
         <section className="stage" aria-label="Game">
           <div className="status-row">
             <div className={`status ${s.thinking ? 'busy' : ''} ${s.over ? 'over' : ''} ${s.paused ? 'paused' : ''}`} aria-hidden>
@@ -660,7 +691,7 @@ export function App() {
               </button>
             )}
           </div>
-          <ScoutActivity scouting={s.scouting} progress={s.scoutProgress} report={s.scoutReport} onOpen={() => setYouOpen(true)} />
+          <ScoutActivity scouting={s.scouting} progress={s.scoutProgress} report={s.scoutReport} onOpen={() => (setYouTab('scout'), setYouOpen(true))} />
           <div className="board-wrap">
           <Board
             marks={s.marks}
@@ -727,178 +758,185 @@ export function App() {
 
       {youOpen && (
         <Modal title="You" variant="sheet" onClose={() => setYouOpen(false)}>
-          <div className="sheet-head">
-            <span />
-            <h2>{s.profile.name ?? 'You'}</h2>
+          <div className="you-head">
+            <Avatar mood="happy" size={56} />
+            <div className="you-id">
+              <h2>{s.profile.name ?? 'You'}</h2>
+              <p>
+                {s.profile.gamesPlayed} {s.profile.gamesPlayed === 1 ? 'game' : 'games'} · {s.profile.wins} {s.profile.wins === 1 ? 'win' : 'wins'} · {s.profile.puzzles.solved} puzzles · {(s.profile.lessonsDone ?? []).length}/6 lessons
+              </p>
+            </div>
             <button className="link-btn strong" onClick={() => setYouOpen(false)}>
               Done
             </button>
           </div>
-          <div className="you-stats">
-            <div>
-              <b>{s.profile.gamesPlayed}</b>
-              <span>games</span>
-            </div>
-            <div>
-              <b>{s.profile.wins}</b>
-              <span>wins</span>
-            </div>
-            <div>
-              <b>{s.profile.puzzles.solved}</b>
-              <span>puzzles</span>
-            </div>
-          </div>
+          <Segmented
+            label="Section"
+            value={youTab}
+            onChange={setYouTab}
+            options={[
+              { value: 'games', label: 'Games' },
+              { value: 'settings', label: 'Settings' },
+              { value: 'scout', label: 'Scout' },
+            ]}
+          />
+          {youTab === 'games' && (
+            <div className="you-body">
+              <Group title="Game">
+                <button className="row action" onClick={() => (setYouOpen(false), void act('new_game', {}, 'New game'))}>
+                  New game
+                </button>
+                <button className="row action" onClick={() => (setYouOpen(false), void act('new_game', { color: s.kidColor === 'w' ? 'black' : 'white' }, 'Switch colours'))}>
+                  New game as {s.kidColor === 'w' ? 'black' : 'white'}
+                </button>
+                <div className="row">
+                  <span className="row-text">Squarely's level</span>
+                  <Segmented
+                    label="Level"
+                    value={s.level}
+                    onChange={(v) => game.changeSettings({ level: v })}
+                    options={[1, 2, 3, 4, 5].map((l) => ({ value: l, label: String(l), aria: `Level ${l}` }))}
+                  />
+                </div>
+                <button className="row action" onClick={() => (setYouOpen(false), game.showPanel('parent_summary'))}>
+                  Game summary
+                </button>
+              </Group>
 
-          {s.savedGames.length > 0 && (
-            <Group title="Your games" footer="Every game saves itself after each move.">
-              {s.savedGames.slice(0, 6).map((g, i) => (
-                <div className="row game-row" key={g.id}>
+              {s.savedGames.length > 0 && (
+                <Group title="Saved games" footer="Every game saves itself after each move.">
+                  {s.savedGames.slice(0, 12).map((g, i) => (
+                    <div className="row game-row" key={g.id}>
+                      <span className="row-text">
+                        <span>
+                          {g.id === s.gameId && !s.puzzle && !s.lesson && !s.review ? 'Playing now' : g.result === 'won' ? '🏆 Won' : g.result === 'lost' ? 'Lost' : g.result === 'draw' ? 'Draw' : 'In progress'} · {Math.ceil(g.moves / 2)} {Math.ceil(g.moves / 2) === 1 ? 'move' : 'moves'}
+                        </span>
+                        <small>
+                          {new Date(g.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(g.updated).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                          {g.opening ? ` · ${g.opening}` : ''}
+                        </small>
+                      </span>
+                      {!g.result && (g.id !== s.gameId || !!s.puzzle || !!s.lesson || !!s.review) && (
+                        <button className="pill-btn ghost" onClick={() => (setYouOpen(false), void act('open_game', { action: 'continue', which: String(i + 1) }, 'Continue saved game'))}>
+                          Continue
+                        </button>
+                      )}
+                      <button className="pill-btn ghost" onClick={() => (setYouOpen(false), void act('open_game', { action: 'review', which: String(i + 1) }, 'Review saved game'))}>
+                        Review
+                      </button>
+                    </div>
+                  ))}
+                </Group>
+              )}
+
+            </div>
+          )}
+          {youTab === 'settings' && (
+            <div className="you-body settings-grid">
+              <Group title="Look" footer='Or just say it: "make the board blue", "animal pieces".'>
+                <div className="row swatches" role="radiogroup" aria-label="Board colours">
+                  {(Object.keys(BOARD_THEMES) as BoardTheme[]).map((k) => (
+                    <button
+                      key={k}
+                      role="radio"
+                      aria-checked={s.settings.boardTheme === k}
+                      aria-label={BOARD_THEMES[k].label}
+                      title={BOARD_THEMES[k].label}
+                      className={`swatch ${s.settings.boardTheme === k ? 'on' : ''}`}
+                      style={{ background: `linear-gradient(135deg, ${BOARD_THEMES[k].light} 50%, ${BOARD_THEMES[k].dark} 50%)` }}
+                      onClick={() => game.changeSettings({ board_theme: k })}
+                    />
+                  ))}
+                </div>
+                <div className="row">
+                  <Segmented
+                    label="Pieces"
+                    value={s.settings.pieceStyle}
+                    onChange={(v: PieceStyle) => game.changeSettings({ piece_style: v })}
+                    options={(Object.keys(PIECE_STYLES) as PieceStyle[]).map((k) => ({ value: k, label: PIECE_STYLES[k].split(' (')[0] }))}
+                  />
+                </div>
+              </Group>
+
+              <Group title="Voice" footer="Friendly names: “horse” and “castle”, pieces with faces and simpler words, great for young players. Squarely sticks to one language; ask out loud to switch.">
+                <SwitchRow label="Friendly names" checked={s.kidsMode} onChange={setKids} />
+                <div className="row">
+                  <span className="row-text">Talk</span>
+                  <Segmented
+                    label="Talk style"
+                    value={s.settings.talk}
+                    onChange={(v: TalkStyle) => {
+                      game.changeSettings({ talk_style: v })
+                      voice.current?.updateInstruction(instruction())
+                      if (connected) voice.current!.sendEvent(talkNote(v))
+                    }}
+                    options={(Object.keys(TALK_STYLE) as TalkStyle[]).map((k) => ({ value: k, label: TALK_STYLE[k].label }))}
+                  />
+                </div>
+                <label className="row">
+                  <span className="row-text">Language</span>
+                  <select
+                    className="ios-select"
+                    value={s.settings.language}
+                    onChange={(e) => {
+                      game.changeSettings({ language: e.target.value })
+                      if (connected) voice.current!.sendEvent(languageNote(e.target.value))
+                      voice.current?.updateInstruction(instruction())
+                    }}
+                  >
+                    {LANGUAGES.map((l) => (
+                      <option key={l} value={l}>
+                        {l}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button className="row action" onClick={() => (setYouOpen(false), game.showPanel('help'))}>
+                  What can I say?
+                </button>
+              </Group>
+
+              <Group title="Memory" footer="condense.chat compresses past conversations and the Scout's game log before Gemini reads them.">
+                <div className="row">
                   <span className="row-text">
-                    <span>
-                      {g.id === s.gameId && !s.puzzle && !s.lesson && !s.review ? 'Playing now' : g.result === 'won' ? '🏆 Won' : g.result === 'lost' ? 'Lost' : g.result === 'draw' ? 'Draw' : 'In progress'} · {Math.ceil(g.moves / 2)} {Math.ceil(g.moves / 2) === 1 ? 'move' : 'moves'}
-                    </span>
+                    <span>Remembers from last time</span>
+                    <small>{s.profile.sessionMemory ? `${s.profile.sessionMemory.slice(0, 90)}…` : 'Nothing yet'}</small>
+                  </span>
+                </div>
+                <div className="row">
+                  <span className="row-text">
+                    <span>Tokens saved by condense</span>
                     <small>
-                      {new Date(g.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(g.updated).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
-                      {g.opening ? ` · ${g.opening}` : ''}
+                      {s.profile.condense.calls
+                        ? `${(s.profile.condense.before - s.profile.condense.after).toLocaleString()} of ${s.profile.condense.before.toLocaleString()} (−${Math.round((1 - s.profile.condense.after / s.profile.condense.before) * 100)}%)`
+                        : 'Nothing compressed yet'}
                     </small>
                   </span>
-                  {!g.result && (g.id !== s.gameId || !!s.puzzle || !!s.lesson || !!s.review) && (
-                    <button className="pill-btn ghost" onClick={() => (setYouOpen(false), void act('open_game', { action: 'continue', which: String(i + 1) }, 'Continue saved game'))}>
-                      Continue
-                    </button>
-                  )}
-                  <button className="pill-btn ghost" onClick={() => (setYouOpen(false), void act('open_game', { action: 'review', which: String(i + 1) }, 'Review saved game'))}>
-                    Review
-                  </button>
                 </div>
-              ))}
-            </Group>
-          )}
+              </Group>
 
-          <Group title="Game">
-            <button className="row action" onClick={() => (setYouOpen(false), void act('new_game', {}, 'New game'))}>
-              New game
-            </button>
-            <button className="row action" onClick={() => (setYouOpen(false), void act('new_game', { color: s.kidColor === 'w' ? 'black' : 'white' }, 'Switch colours'))}>
-              New game as {s.kidColor === 'w' ? 'black' : 'white'}
-            </button>
-            <div className="row">
-              <span className="row-text">Squarely's level</span>
-              <Segmented
-                label="Level"
-                value={s.level}
-                onChange={(v) => game.changeSettings({ level: v })}
-                options={[1, 2, 3, 4, 5].map((l) => ({ value: l, label: String(l), aria: `Level ${l}` }))}
-              />
-            </div>
-            <button className="row action" onClick={() => (setYouOpen(false), game.showPanel('parent_summary'))}>
-              Game summary
-            </button>
-          </Group>
-
-          <ScoutCard report={s.scoutReport} scouting={s.scouting} progress={s.scoutProgress} saved={s.profile.scout} onScout={(username) => void say(`My chess.com username is ${username}`)} />
-
-          <Group title="Look" footer='Or just say it: "make the board blue", "animal pieces".'>
-            <div className="row swatches" role="radiogroup" aria-label="Board colours">
-              {(Object.keys(BOARD_THEMES) as BoardTheme[]).map((k) => (
+              <Group title="Privacy" footer="Your key goes straight from this browser to Google. Games and progress stay on this device.">
+                <button className="row action" onClick={() => (setYouOpen(false), forgetKey())}>
+                  {hasKey ? 'Change Gemini key' : 'Add a Gemini key'}
+                </button>
                 <button
-                  key={k}
-                  role="radio"
-                  aria-checked={s.settings.boardTheme === k}
-                  aria-label={BOARD_THEMES[k].label}
-                  title={BOARD_THEMES[k].label}
-                  className={`swatch ${s.settings.boardTheme === k ? 'on' : ''}`}
-                  style={{ background: `linear-gradient(135deg, ${BOARD_THEMES[k].light} 50%, ${BOARD_THEMES[k].dark} 50%)` }}
-                  onClick={() => game.changeSettings({ board_theme: k })}
-                />
-              ))}
+                  className="row action danger"
+                  onClick={() => {
+                    if (!armForget) {
+                      setArmForget(true)
+                      setTimeout(() => setArmForget(false), 4000)
+                      return
+                    }
+                    game.forgetMe(true)
+                    location.reload()
+                  }}
+                >
+                  {armForget ? 'Tap again to erase name, games and progress' : 'Forget me'}
+                </button>
+              </Group>
             </div>
-            <div className="row">
-              <Segmented
-                label="Pieces"
-                value={s.settings.pieceStyle}
-                onChange={(v: PieceStyle) => game.changeSettings({ piece_style: v })}
-                options={(Object.keys(PIECE_STYLES) as PieceStyle[]).map((k) => ({ value: k, label: PIECE_STYLES[k].split(' (')[0] }))}
-              />
-            </div>
-          </Group>
-
-          <Group title="Voice" footer="Friendly names: “horse” and “castle”, pieces with faces and simpler words, great for young players. Squarely sticks to one language; ask out loud to switch.">
-            <SwitchRow label="Friendly names" checked={s.kidsMode} onChange={setKids} />
-            <div className="row">
-              <span className="row-text">Talk</span>
-              <Segmented
-                label="Talk style"
-                value={s.settings.talk}
-                onChange={(v: TalkStyle) => {
-                  game.changeSettings({ talk_style: v })
-                  voice.current?.updateInstruction(instruction())
-                  if (connected) voice.current!.sendEvent(talkNote(v))
-                }}
-                options={(Object.keys(TALK_STYLE) as TalkStyle[]).map((k) => ({ value: k, label: TALK_STYLE[k].label }))}
-              />
-            </div>
-            <label className="row">
-              <span className="row-text">Language</span>
-              <select
-                className="ios-select"
-                value={s.settings.language}
-                onChange={(e) => {
-                  game.changeSettings({ language: e.target.value })
-                  if (connected) voice.current!.sendEvent(languageNote(e.target.value))
-                  voice.current?.updateInstruction(instruction())
-                }}
-              >
-                {LANGUAGES.map((l) => (
-                  <option key={l} value={l}>
-                    {l}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button className="row action" onClick={() => (setYouOpen(false), game.showPanel('help'))}>
-              What can I say?
-            </button>
-          </Group>
-
-          <Group title="Memory" footer="condense.chat compresses past conversations and the Scout's game log before Gemini reads them.">
-            <div className="row">
-              <span className="row-text">
-                <span>Remembers from last time</span>
-                <small>{s.profile.sessionMemory ? `${s.profile.sessionMemory.slice(0, 90)}…` : 'Nothing yet'}</small>
-              </span>
-            </div>
-            <div className="row">
-              <span className="row-text">
-                <span>Tokens saved by condense</span>
-                <small>
-                  {s.profile.condense.calls
-                    ? `${(s.profile.condense.before - s.profile.condense.after).toLocaleString()} of ${s.profile.condense.before.toLocaleString()} (−${Math.round((1 - s.profile.condense.after / s.profile.condense.before) * 100)}%)`
-                    : 'Nothing compressed yet'}
-                </small>
-              </span>
-            </div>
-          </Group>
-
-          <Group title="Privacy" footer="Your key goes straight from this browser to Google. Games and progress stay on this device.">
-            <button className="row action" onClick={() => (setYouOpen(false), forgetKey())}>
-              {hasKey ? 'Change Gemini key' : 'Add a Gemini key'}
-            </button>
-            <button
-              className="row action danger"
-              onClick={() => {
-                if (!armForget) {
-                  setArmForget(true)
-                  setTimeout(() => setArmForget(false), 4000)
-                  return
-                }
-                game.forgetMe(true)
-                location.reload()
-              }}
-            >
-              {armForget ? 'Tap again to erase name, games and progress' : 'Forget me'}
-            </button>
-          </Group>
+          )}
+          {youTab === 'scout' && <div className="you-body">{<ScoutCard report={s.scoutReport} scouting={s.scouting} progress={s.scoutProgress} saved={s.profile.scout} onScout={(username) => void say(`My chess.com username is ${username}`)} />}</div>}
           <p className="caption center">
             {hasKey ? `Voice: ${LIVE_MODEL} · ${liveState}` : localTts.state === 'ready' ? 'Voice: Kokoro-82M in your browser' : 'Voice: on this device'} · Scout plan: {BRAIN_MODEL} · Engine: Stockfish 19 · Puzzles: Lichess
           </p>
