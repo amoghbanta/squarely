@@ -2,6 +2,7 @@
 // with a tiny keyword parser and template replies (spoken with the browser's speech synthesis).
 import type { FunctionCall } from '@google/genai'
 import type { PieceWord } from '../chess/resolver'
+import { normalizeSpeech } from '../chess/hearing'
 
 const THEME_WORDS: Record<string, string> = {
   'green|meadow': 'meadow',
@@ -23,7 +24,8 @@ const WORDS: [RegExp, PieceWord][] = [
 ]
 
 export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> | null {
-  const t = text.toLowerCase().trim()
+  // Repair misheard chess words first ("night to G3" → "knight to g3").
+  const t = normalizeSpeech(text)
   if (/\b(undo|take (it )?back|oops|try again)\b/.test(t)) return { name: 'undo', args: {} }
   // Castling first: "castle" alone means the move, not the rook.
   if (/\b(castle|castling)\b/.test(t) && !/\b(my|the|his|her) castle\b|castle (to|takes|on)\b/.test(t))
@@ -33,6 +35,9 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   if (theme && /board|colou?r|theme/.test(t)) return { name: 'change_settings', args: { board_theme: theme[1] } }
   const style = Object.entries(STYLE_WORDS).find(([re]) => new RegExp(re).test(t))
   if (style && /piece/.test(t)) return { name: 'change_settings', args: { piece_style: style[1] } }
+  if (/talk less|less chat|to the point|just (the )?chess|be quiet/.test(t)) return { name: 'change_settings', args: { talk_style: 'brief' } }
+  if (/talk more|chatty|be funny|more fun/.test(t)) return { name: 'change_settings', args: { talk_style: 'chatty' } }
+  if (/balanced|normal talk/.test(t)) return { name: 'change_settings', args: { talk_style: 'balanced' } }
   if (/kids? mode/.test(t)) return { name: 'change_settings', args: { kids_mode: !/off|grown|adult/.test(t) } }
   if (/harder|tougher/.test(t)) return { name: 'change_settings', args: { level: 4 } }
   if (/easier/.test(t)) return { name: 'change_settings', args: { level: 1 } }

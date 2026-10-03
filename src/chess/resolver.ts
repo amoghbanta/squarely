@@ -19,6 +19,7 @@ export type MoveIntent = {
   promotion?: PieceWord
   san?: string
   option?: number // 1-based answer to a previous clarifying question
+  heard?: string // the player's words, for the misheard-move fallback
 }
 
 export type MoveOption = { label: string; san: string; from: Square; to: Square }
@@ -79,10 +80,12 @@ export function resolveMove(chess: Chess, intent: MoveIntent, pending: MoveOptio
   cands = narrowByWhich(chess, cands, intent.which)
 
   if (cands.length === 1) return { status: 'ok', move: cands[0] }
-  if (cands.length === 0) return explainIllegal(chess, intent, legal)
+  if (cands.length === 0) return nearestLegal(chess, intent, legal) ?? explainIllegal(chess, intent, legal)
 
   // Too many to list out loud: ask a narrowing question instead of reading a long menu.
   if (new Set(cands.map((m) => m.from)).size > 3 && !isSquare(intent.to)) {
+    const near = nearestLegal(chess, intent, legal)
+    if (near) return near
     const name = nameOf(cands[0].piece)
     return {
       status: 'ask',
@@ -101,6 +104,49 @@ export function resolveMove(chess: Chess, intent: MoveIntent, pending: MoveOptio
       ? `Your ${name} can go to a few places. Which one?`
       : `A few moves fit. Which one do you mean?`
   return { status: 'ask', question, options }
+}
+
+// Files a speech recogniser easily swaps ("bee", "see", "dee", "ee", "gee" all rhyme).
+const RHYMES = new Set(['b', 'c', 'd', 'e', 'g'])
+
+/**
+ * Misheard-move fallback. When the words don't match exactly one legal move (e.g. "knight to g3" from
+ * the start, where only f3 and h3 are possible), rank the legal moves by how close they are to what was
+ * said, and ask about the best two or three. It never plays one by itself: the player picks.
+ */
+function nearestLegal(chess: Chess, intent: MoveIntent, legal: Move[]): Resolution | null {
+  const to = isSquare(intent.to) ? (intent.to.toLowerCase() as Square) : null
+  const from = isSquare(intent.from) ? (intent.from.toLowerCase() as Square) : null
+  if (!intent.piece && !to) return null
+  const score = (m: Move) => {
+    let sc = 0
+    if (intent.piece) sc += m.piece === SYM[intent.piece] ? 3 : -2
+    if (from) sc += m.from === from ? 2 : 0
+    if (intent.capture) sc += m.captured === SYM[intent.capture] ? 2 : 0
+    if (to) {
+      const d = dist(m.to, to)
+      const rhyme = m.to[1] === to[1] && RHYMES.has(m.to[0]) && RHYMES.has(to[0])
+      sc += m.to === to ? 4 : rhyme || d === 1 ? 2 : d === 2 ? 1 : -1
+    }
+    return sc
+  }
+  const ranked = legal
+    .filter((m) => !m.promotion || m.promotion === 'q')
+    .map((m) => ({ m, sc: score(m), d: to ? dist(m.to, to) : 0 }))
+    // Best score first; on a tie, the square physically closest to what was said.
+    .sort((a, b) => b.sc - a.sc || a.d - b.d)
+  const top = ranked[0]?.sc ?? 0
+  // Needs the right piece AND a nearby square (or an exact square), else it's not a near miss.
+  if (top < 4) return null
+  const picks = ranked.filter((r) => r.sc >= top - 1).slice(0, 3).map((r) => r.m)
+  const me = chess.turn()
+  const said = [intent.piece && nameOf(SYM[intent.piece]), to && `to ${to}`].filter(Boolean).join(' ')
+  const cant = intent.piece && to ? `A ${nameOf(SYM[intent.piece])} can't go to ${to} right now.` : `I'm not sure I heard "${said}" right.`
+  return {
+    status: 'ask',
+    question: `${cant} Did you mean${picks.length > 1 ? ' one of these' : ''}?`,
+    options: picks.map((m) => ({ label: describeMove(m, me), san: m.san, from: m.from, to: m.to })),
+  }
 }
 
 function narrowByWhich(chess: Chess, cands: Move[], which?: MoveIntent['which']): Move[] {

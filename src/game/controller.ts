@@ -17,6 +17,8 @@ import {
   winProb,
 } from '../chess/facts'
 import { THEME_INFO, THEME_FOR_MISTAKE, pickPuzzle, themeFromWords, type Puzzle, type PuzzleTheme } from '../chess/puzzles'
+import { parseOffline } from '../agent/offline'
+import { TALK_STYLE, type TalkStyle } from '../agent/prompt'
 import { resolveMove, type MoveIntent, type MoveOption } from '../chess/resolver'
 import { classifyPunishment, type Punishment } from '../chess/motifs'
 import { loadProfile, resetProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
@@ -100,11 +102,11 @@ export type PuzzleView = {
 }
 
 export type Panel = 'summary' | 'scout' | 'help' | null
-export type Settings = { boardTheme: BoardTheme; pieceStyle: PieceStyle; showTrace: boolean; language: string }
+export type Settings = { boardTheme: BoardTheme; pieceStyle: PieceStyle; showTrace: boolean; language: string; talk: TalkStyle }
 
 const SETTINGS_KEY = 'squarely.settings.v1'
 const loadSettings = (): Settings => {
-  const d: Settings = { boardTheme: 'meadow', pieceStyle: 'friends', showTrace: true, language: 'English' }
+  const d: Settings = { boardTheme: 'meadow', pieceStyle: 'friends', showTrace: true, language: 'English', talk: 'balanced' }
   try {
     const v = { ...d, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>) }
     // "auto" (follow the player) is gone: Live drifted between languages mid-game. See README, Known issues.
@@ -132,6 +134,27 @@ const readKidsMode = () => {
   } catch {
     return true
   }
+}
+
+/**
+ * The player's own words win over the model's reading of them: if they named a piece or a square
+ * (after fixing sound-alikes like "night" → knight), use that. The model's other fields stay.
+ */
+function withHeard(intent: MoveIntent): MoveIntent {
+  if (!intent.heard || intent.option || intent.san || intent.castle) return intent
+  const h = parseOffline(intent.heard)
+  if (h?.name !== 'make_move') return intent
+  const a = h.args as MoveIntent
+  if (a.castle) return { castle: a.castle }
+  return { ...intent, ...Object.fromEntries(Object.entries(a).filter(([, v]) => v !== undefined)) }
+}
+
+/** Do the player's words name a move at all (a piece, a square, castling, or an answer like "yes" / "the first one")? */
+function heardHasMove(heard: string, answering: boolean): boolean {
+  // Short answers only count while a "which one?" question is open.
+  if (answering && /\b(yes|yeah|yep|sure|ok|okay|that one|this one|first|second|third|1|2|3|4|one|two|three|four)\b/i.test(heard) && heard.trim().split(/\s+/).length <= 4)
+    return true
+  return parseOffline(heard)?.name === 'make_move'
 }
 
 export class GameController {
@@ -333,10 +356,20 @@ export class GameController {
 
   /** Referee: exactly one legal move ({ ok }), or the clarifying question / not-legal result to hand back. */
   private referee(intent: MoveIntent, t0: number): { ok: Move; result?: never } | { ok?: never; result: Record<string, unknown> } {
-    const r = resolveMove(this.chess, intent, this.pending)
+    // The model may have guessed a move from garbled words ("algo 1 2 3 yes" became b3). If the words it
+    // heard hold no chess move at all, refuse and let it ask again. English only: other languages' piece
+    // words aren't in the offline parser, so there we trust the model's reading.
+    if (intent.heard && !intent.option && this.settings.language === 'English' && !heardHasMove(intent.heard, !!this.pending?.length)) {
+      this.log('Referee', 'Did not catch a move', { heard: intent.heard }, performance.now() - t0)
+      return { result: { status: 'did_not_catch', heard: intent.heard, instruction: 'Those words have no move in them. Ask the player to say it again, like "horse to f3". Do not guess a move.' } }
+    }
+    const r = resolveMove(this.chess, withHeard(intent), this.pending)
     if (r.status === 'ask') {
       this.pending = r.options
-      this.point(r.options.map((o) => ({ from: o.from, to: o.to, kind: 'option' as const })), r.options.map((o) => ({ square: o.from, kind: 'focus' as const })))
+      this.point(
+        r.options.map((o) => ({ from: o.from, to: o.to, kind: 'option' as const })),
+        [...new Set(r.options.map((o) => o.from))].map((sq) => ({ square: sq, kind: 'focus' as const })),
+      )
       this.say(`${r.question} ${r.options.map((o, i) => `${i + 1}: ${o.label}`).join('. ')}`)
       this.log('Referee', 'Ambiguous → ask kid', { question: r.question, options: r.options.map((o) => o.san) }, performance.now() - t0)
       return { result: { status: 'need_clarification', question: r.question, options: r.options.map((o, i) => ({ option: i + 1, ...o })) } }
@@ -1208,6 +1241,10 @@ export class GameController {
     const changed: Record<string, unknown> = {}
     if (isBoardTheme(args.board_theme)) changed.board_theme = this.settings.boardTheme = args.board_theme
     if (isPieceStyle(args.piece_style)) changed.piece_style = this.settings.pieceStyle = args.piece_style
+    if (typeof args.talk_style === 'string' && args.talk_style in TALK_STYLE) {
+      changed.talk_style = this.settings.talk = args.talk_style as TalkStyle
+      changed.talk_rule = TALK_STYLE[this.settings.talk].rule
+    }
     if (typeof args.show_agent_trace === 'boolean') changed.show_agent_trace = this.settings.showTrace = args.show_agent_trace
     if (typeof args.language === 'string' && args.language.trim() && args.language.trim().toLowerCase() !== 'auto') {
       changed.language = this.settings.language = args.language.trim().slice(0, 30)

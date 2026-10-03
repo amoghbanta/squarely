@@ -9,7 +9,7 @@ import { ScoutActivity } from './ui/ScoutActivity'
 import { TracePanel } from './ui/TracePanel'
 import { LiveVoice, LIVE_MODEL, type LiveState } from './voice/live'
 import { runTool, toolDeclarations } from './agent/tools'
-import { languageNote, modeSwitchNote, systemInstruction } from './agent/prompt'
+import { languageNote, modeSwitchNote, systemInstruction, talkNote, TALK_STYLE, type TalkStyle } from './agent/prompt'
 import { Avatar, type Mood } from './ui/Avatar'
 import { parseOffline, phraseOffline } from './agent/offline'
 import { ScoutCard } from './ui/ScoutCard'
@@ -19,6 +19,9 @@ import { Group, Segmented, SwitchRow } from './ui/controls'
 import { ChatIcon, KeyboardIcon, MicIcon, PersonIcon, SendIcon } from './ui/icons'
 import { BRAIN_MODEL } from './scout/scout'
 import { BrowserEars, earsSupported } from './voice/browserEars'
+
+/** The Live system instruction for the current profile and settings. */
+const instruction = () => systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language, game.settings.talk)
 
 const KEY_STORE = 'squarely.geminiKey'
 const WAKE = /\b(wake up|hey|hi|connect( to)?|call|talk to)\b.*\b(squarely|gemini|big brain)\b/i
@@ -105,8 +108,9 @@ export function App() {
     onToolCall: async (fc) => {
       const r = await runTool(game, fc)
       // A spoken "speak Swedish" must survive a reconnect too, so refresh the stored instruction.
-      if (fc.name === 'change_settings' && (r as { changed?: { language?: string } }).changed?.language)
-        voice.current?.updateInstruction(systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language))
+      const changed = (r as { changed?: { language?: string; talk_style?: string } }).changed
+      if (fc.name === 'change_settings' && (changed?.language || changed?.talk_style))
+        voice.current?.updateInstruction(instruction())
       return r
     },
     onTranscript: (who, t) => game.addTranscript(who, t),
@@ -132,7 +136,7 @@ export function App() {
   const start = useCallback(async () => {
     const v = voice.current!
     try {
-      if (!v.connected) await v.connect(apiKey, systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language), toolDeclarations)
+      if (!v.connected) await v.connect(apiKey, instruction(), toolDeclarations)
       await v.startMic()
       setMicOn(v.micOn)
       v.sendText(game.profile.name ? `(${game.profile.name} is back. Greet them by name.)` : '(A new player arrived. Say hi and ask their name.)')
@@ -171,7 +175,7 @@ export function App() {
     if (v.connected) return true
     if (!hasKey) return false
     try {
-      await v.connect(apiKey, systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language), toolDeclarations)
+      await v.connect(apiKey, instruction(), toolDeclarations)
       return true
     } catch {
       return false
@@ -729,6 +733,19 @@ export function App() {
 
           <Group title="Voice" footer="Kids mode uses friendly piece names and characters. Squarely sticks to one language; ask out loud to switch.">
             <SwitchRow label="Kids mode" checked={s.kidsMode} onChange={setKids} />
+            <div className="row">
+              <span className="row-text">Talk</span>
+              <Segmented
+                label="Talk style"
+                value={s.settings.talk}
+                onChange={(v: TalkStyle) => {
+                  game.changeSettings({ talk_style: v })
+                  voice.current?.updateInstruction(instruction())
+                  if (connected) voice.current!.sendEvent(talkNote(v))
+                }}
+                options={(Object.keys(TALK_STYLE) as TalkStyle[]).map((k) => ({ value: k, label: TALK_STYLE[k].label }))}
+              />
+            </div>
             <label className="row">
               <span className="row-text">Language</span>
               <select
@@ -737,7 +754,7 @@ export function App() {
                 onChange={(e) => {
                   game.changeSettings({ language: e.target.value })
                   if (connected) voice.current!.sendEvent(languageNote(e.target.value))
-                  voice.current?.updateInstruction(systemInstruction(game.profile, game.level, game.kidsMode, e.target.value))
+                  voice.current?.updateInstruction(instruction())
                 }}
               >
                 {LANGUAGES.map((l) => (
