@@ -619,6 +619,11 @@ export class GameController {
   }
 
   private async newGameInner(color?: 'white' | 'black') {
+    // Already a fresh board in the requested colour: nothing to reset (models sometimes "start" a game on hello).
+    const want = color ? (color === 'black' ? 'b' : 'w') : this.kidColor
+    if (!this.chess.history().length && want === this.kidColor && this.chess.fen() === new Chess().fen()) {
+      return { status: 'new_game', you_play: colorName(this.kidColor), note: 'board was already fresh' }
+    }
     if (color) this.kidColor = color === 'black' ? 'b' : 'w'
     this.chess = new Chess()
     this.lastMove = null
