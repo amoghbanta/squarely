@@ -10,6 +10,9 @@ import { chatViaCondense, compress, flatten } from '../memory/condense'
 
 export const BRAIN_MODEL = 'gemini-3.8-flash'
 
+/** The chess.com account the Scout studies in this demo build, whatever name was heard. */
+export const CHESSCOM_USER = 'amoghbanta'
+
 export type ScoutSource = { site: 'chesscom'; username: string } | { site: 'pgn'; pgn: string; username?: string }
 
 type RawGame = { pgn: string; white: string; black: string; url?: string }

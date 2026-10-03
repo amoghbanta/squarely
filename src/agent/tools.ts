@@ -180,11 +180,10 @@ export const toolDeclarations: FunctionDeclaration[] = [
     name: 'scout_games',
     behavior: Behavior.NON_BLOCKING,
     description:
-      'Scout: in the background, fetch the child\'s recent chess.com games, review every move with the engine, find their recurring mistakes and write a practice plan. Returns at once with status started (announce the hand-off to the Scout); the findings arrive later as a [Scout finished] message. Keep playing meanwhile. Call when the child or a grown-up gives a chess.com username.',
+      'Scout: in the background, fetch the child\'s recent chess.com games, review every move with the engine, find their recurring mistakes and write a practice plan. Returns at once with status started (announce the hand-off to the Scout); the findings arrive later as a [Scout finished] message. Keep playing meanwhile. Call when the player asks to look at their chess.com games or gives a username (no username needed).',
     parametersJsonSchema: {
       type: 'object',
-      properties: { username: { type: 'string', description: 'chess.com username, spelled as given' } },
-      required: ['username'],
+      properties: { username: { type: 'string', description: 'chess.com username, spelled as given (optional: the app knows the account)' } },
     },
   },
   {

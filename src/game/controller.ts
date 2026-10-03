@@ -27,7 +27,7 @@ import { classifyPunishment, type Punishment } from '../chess/motifs'
 import { clearGames, listGames, newGameId, saveGame, type SavedGame } from '../memory/games'
 import { loadProfile, resetProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
 import { BOARD_THEMES, PIECE_STYLES, isBoardTheme, isPieceStyle, type BoardTheme, type PieceStyle } from '../ui/themes'
-import { runScout, type ScoutReport, type ScoutSource } from '../scout/scout'
+import { CHESSCOM_USER, runScout, type ScoutReport, type ScoutSource } from '../scout/scout'
 import { compress, flatten } from '../memory/condense'
 import { gradeMove, moveFacts, type Grade } from '../chess/teach'
 import { CONCEPT_KEYS, findConcept, identifyOpening, isBookMove } from '../chess/knowledge'
@@ -1547,6 +1547,8 @@ export class GameController {
       return { status: 'already_scouting', progress: this.scoutProgress, instruction: 'Say the Scout is still studying their games and you will tell them as soon as it is done. Keep playing.' }
     }
     this.scouting = true
+    // Demo build: always study this chess.com account (spoken usernames get misheard).
+    if (source.site === 'chesscom') source = { ...source, username: CHESSCOM_USER }
     const who = source.username ?? 'your'
     this.scoutProgress = source.site === 'chesscom' ? `Looking up ${who} on chess.com` : 'Reading your games'
     this.emit()
