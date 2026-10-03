@@ -99,7 +99,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
     name: 'change_settings',
     behavior: Behavior.BLOCKING,
     description:
-      'Change how the app looks or behaves: board colours, piece style, kids mode, buddy level, or showing the agent trace panel. Use for "make the board blue", "animal pieces", "turn off kids mode", "make it harder". Only pass the fields to change.',
+      'Change how the app looks or behaves: board colours, piece style, kids mode, buddy level, or showing the agent trace panel. Use for "make the board blue", "animal pieces", "turn off kids mode", "make it harder", "speak Spanish". Only pass the fields to change.',
     parametersJsonSchema: {
       type: 'object',
       properties: {
@@ -108,6 +108,7 @@ export const toolDeclarations: FunctionDeclaration[] = [
         kids_mode: { type: 'boolean' },
         level: { type: 'integer', description: '1 easiest to 5 hardest' },
         show_agent_trace: { type: 'boolean' },
+        language: { type: 'string', description: 'language to speak, e.g. "Swedish", "Spanish", or "auto" to follow the player' },
       },
     },
   },

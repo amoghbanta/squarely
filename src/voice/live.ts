@@ -24,6 +24,7 @@ export type LiveHandlers = {
   onLevel?: (micLevel: number) => void
   onSpeaking?: (speaking: boolean) => void
   onTurnComplete?: () => void
+  onOutLevel?: (level: number) => void
 }
 
 const b64FromBuffer = (buf: ArrayBuffer) => {
@@ -163,6 +164,11 @@ export class LiveVoice {
     src.connect(ctx.destination)
     this.nextStart = Math.max(this.nextStart, ctx.currentTime + 0.03)
     src.start(this.nextStart)
+    // Drive the avatar's mouth with the loudness of each chunk, in time with playback.
+    let sum = 0
+    for (let i = 0; i < ch.length; i += 4) sum += ch[i] * ch[i]
+    const rms = Math.sqrt(sum / Math.ceil(ch.length / 4))
+    setTimeout(() => this.handlers.onOutLevel?.(rms), Math.max(0, (this.nextStart - ctx.currentTime) * 1000))
     this.nextStart += buf.duration
     this.sources.add(src)
     this.handlers.onSpeaking?.(true)

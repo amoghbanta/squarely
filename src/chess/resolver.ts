@@ -21,7 +21,7 @@ export type MoveIntent = {
   option?: number // 1-based answer to a previous clarifying question
 }
 
-export type MoveOption = { label: string; san: string }
+export type MoveOption = { label: string; san: string; from: Square; to: Square }
 
 export type Resolution =
   | { status: 'ok'; move: Move }
@@ -92,7 +92,7 @@ export function resolveMove(chess: Chess, intent: MoveIntent, pending: MoveOptio
   }
 
   // Several legal moves fit: ask, describing them by piece position, not notation.
-  const options = cands.slice(0, 4).map((m) => ({ label: describeMove(m, me), san: m.san }))
+  const options = cands.slice(0, 4).map((m) => ({ label: describeMove(m, me), san: m.san, from: m.from, to: m.to }))
   const sameDest = new Set(cands.map((m) => m.to)).size === 1
   const name = nameOf(cands[0].piece)
   const question = sameDest

@@ -4,7 +4,8 @@ import { Chess, type Color } from 'chess.js'
 import type { EngineLine } from '../engine/stockfish'
 import { nameOf, other, pieces, threatsAgainst, whereIs } from './facts'
 
-export type Punishment = { motif: string | null; hintFacts: Record<string, unknown> | null }
+/** squares: the kid's pieces to point at on the board (never the answer). */
+export type Punishment = { motif: string | null; hintFacts: Record<string, unknown> | null; squares?: string[] }
 
 export function classifyPunishment(fenAfterKidMove: string, best: EngineLine | undefined, kidColor: Color): Punishment {
 if (!best) return { motif: null, hintFacts: null }
@@ -13,22 +14,24 @@ const copy = new Chess(fenAfterKidMove)
   const attacker = { piece: nameOf(m.piece), where: whereIs(m.from, kidColor) }
   const reply = { piece: nameOf(m.piece), from_where: whereIs(m.from, kidColor), to_where: whereIs(m.to, kidColor) }
   if (best.mate !== null && best.mate > 0) {
-    return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', attacker } }
+    const k = pieces(copy, kidColor).find((q) => copy.get(q)!.type === 'k')
+    return { motif: 'mate_threat', hintFacts: { kind: 'checkmate threat against your king', attacker }, squares: k ? [k] : [] }
   }
   // Fork: the moved enemy piece attacks two or more of the kid's non-pawn pieces (king included).
-  const victims = pieces(copy, kidColor)
-    .filter((sq) => copy.get(sq)!.type !== 'p' && copy.attackers(sq, other(kidColor)).includes(m.to))
-    .map((sq) => copy.get(sq)!.type)
+  const victimSquares = pieces(copy, kidColor).filter((sq) => copy.get(sq)!.type !== 'p' && copy.attackers(sq, other(kidColor)).includes(m.to))
+  const victims = victimSquares.map((sq) => copy.get(sq)!.type)
   if (victims.length >= 2) {
     return {
       motif: 'fork',
       hintFacts: { kind: 'fork: one enemy piece could attack two of yours at once', attacker, targets: victims.map((v) => nameOf(v)) },
+      squares: victimSquares,
     }
   }
   if (m.captured) {
     return {
       motif: 'hanging_piece',
       hintFacts: { kind: 'one of your pieces can be taken for free', victim: { piece: nameOf(m.captured), where: whereIs(m.to, kidColor) }, attacker },
+      squares: [m.to],
     }
   }
   // Otherwise: name the most valuable kid piece the reply puts in danger, and who REALLY attacks it.
@@ -45,6 +48,7 @@ const copy = new Chess(fenAfterKidMove)
         attacked_by: victim.attackers.map((a) => ({ piece: a.name, where: a.where })),
         enemy_move_that_does_it: reply,
       },
+      squares: [victim.victim.square],
     }
   }
   return { motif: 'loses_material', hintFacts: { kind: 'the opponent has a strong reply', enemy_move_that_does_it: reply } }

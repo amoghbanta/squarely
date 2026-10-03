@@ -5,13 +5,14 @@ import { Board } from './ui/Board'
 import { TracePanel } from './ui/TracePanel'
 import { LiveVoice, LIVE_MODEL, type LiveState } from './voice/live'
 import { runTool, toolDeclarations } from './agent/tools'
-import { modeSwitchNote, systemInstruction } from './agent/prompt'
+import { languageNote, modeSwitchNote, systemInstruction } from './agent/prompt'
+import { Avatar, type Mood } from './ui/Avatar'
 import { parseOffline, phraseOffline } from './agent/offline'
 import { ScoutCard } from './ui/ScoutCard'
 import { Modal } from './ui/Modal'
 import { BOARD_THEMES, PIECE_STYLES, type BoardTheme, type PieceStyle } from './ui/themes'
 import { Group, Segmented, SwitchRow } from './ui/controls'
-import { GearIcon, HelpIcon, KeyboardIcon, MicIcon, MoreIcon, SendIcon, StopIcon } from './ui/icons'
+import { GearIcon, HelpIcon, KeyboardIcon, MicIcon, MoreIcon, SendIcon } from './ui/icons'
 import { BRAIN_MODEL } from './scout/scout'
 
 const KEY_STORE = 'squarely.geminiKey'
@@ -38,6 +39,8 @@ const RECEIPT: Record<string, string> = {
   new_game: 'Referee',
 }
 
+const LANGUAGES = ['auto', 'English', 'Svenska', 'Español', 'Français', 'Deutsch', 'Italiano', 'Português', 'Nederlands', 'Polski', 'Türkçe', 'العربية', 'हिन्दी', '中文', '日本語', '한국어']
+
 const QUICK = ["What's attacking me?", 'Give me a hint', 'Undo', 'Read the board']
 
 const PHONE_QUERY = '(max-width: 899px)'
@@ -63,6 +66,7 @@ export function App() {
   const [micOn, setMicOn] = useState(false)
   const [speaking, setSpeaking] = useState(false)
   const [level, setLevelUi] = useState(0)
+  const [outLevel, setOutLevel] = useState(0)
   const [text, setText] = useState('')
   const [typing, setTyping] = useState(false)
   const [tab, setTab] = useState<Tab>('coach')
@@ -79,7 +83,11 @@ export function App() {
       game.log('Voice', `Live ${st}`, detail || undefined)
     },
     onLevel: (l) => setLevelUi(l),
-    onSpeaking: setSpeaking,
+    onSpeaking: (on) => {
+      setSpeaking(on)
+      if (!on) setOutLevel(0)
+    },
+    onOutLevel: setOutLevel,
   })
 
   const connected = liveState === 'live'
@@ -90,7 +98,7 @@ export function App() {
   const start = useCallback(async () => {
     const v = voice.current!
     try {
-      if (!v.connected) await v.connect(apiKey, systemInstruction(game.profile, game.level, game.kidsMode), toolDeclarations)
+      if (!v.connected) await v.connect(apiKey, systemInstruction(game.profile, game.level, game.kidsMode, game.settings.language), toolDeclarations)
       await v.startMic()
       setMicOn(true)
       v.sendText(game.profile.name ? `(${game.profile.name} is back. Greet them by name.)` : '(A new player arrived. Say hi and ask their name.)')
@@ -223,12 +231,27 @@ export function App() {
         : "It's a draw"
     : s.thinking
       ? 'Thinking…'
-      : s.turn === s.kidColor
+      : s.hintOpen && s.turn !== s.kidColor
+        ? 'Undo or keep it?'
+        : s.turn === s.kidColor
         ? 'Your move'
         : "Squarely's move"
 
   const micLabel =
     liveState === 'connecting' ? 'Connecting…' : micOn ? (speaking ? 'Squarely is talking' : 'Listening') : connected ? 'Tap to talk' : hasKey ? 'Start talking' : 'Type to play'
+
+  const mood: Mood =
+    liveState === 'connecting'
+      ? 'thinking'
+      : speaking
+        ? 'talking'
+        : s.mood
+          ? s.mood
+          : s.thinking || s.scouting
+            ? 'thinking'
+            : micOn
+              ? 'listening'
+              : 'idle'
 
   const lastKid = [...s.transcript].reverse().find((l) => l.who === 'kid')
   const lastBuddy = [...s.transcript].reverse().find((l) => l.who === 'buddy')
@@ -242,9 +265,7 @@ export function App() {
     <div className={`app ${phone ? 'is-phone' : ''}`}>
       <header className="topbar" inert={modalOpen}>
         <div className="brand">
-          <span className="logo" aria-hidden>
-            ♞
-          </span>
+          <Avatar mood={s.mood === 'happy' ? 'happy' : 'idle'} size={38} className="logo-avatar" />
           <div>
             <h1>Squarely</h1>
             <p className="tagline">{s.kidsMode ? 'Chess by voice, with a coach that never makes things up.' : 'Voice chess coach. Every fact checked by the engine.'}</p>
@@ -268,6 +289,7 @@ export function App() {
             {status}
           </div>
           <Board
+            marks={s.marks}
             kidsMode={s.kidsMode}
             boardTheme={s.settings.boardTheme}
             pieceStyle={s.settings.pieceStyle}
@@ -344,7 +366,12 @@ export function App() {
                     aria-label={micOn ? 'Stop listening' : 'Talk to Squarely'}
                     style={{ ['--lvl' as string]: String(Math.min(1, level * 5)) }}
                   >
-                    {micOn ? <StopIcon /> : <MicIcon />}
+                    <Avatar mood={mood} level={outLevel} size={84} />
+                    {micOn && (
+                      <span className="rec" aria-hidden>
+                        <MicIcon />
+                      </span>
+                    )}
                   </button>
                   <span className="mic-label">{micLabel}</span>
                 </div>
@@ -435,6 +462,25 @@ export function App() {
                     />
                   </div>
                 </Group>
+                <Group title="Language" footer="Squarely can talk in many languages. Auto follows whatever language you speak.">
+                  <label className="row">
+                    <span className="row-text">Speak</span>
+                    <select
+                      className="ios-select"
+                      value={s.settings.language}
+                      onChange={(e) => {
+                        game.changeSettings({ language: e.target.value })
+                        if (connected) voice.current!.sendEvent(languageNote(e.target.value))
+                      }}
+                    >
+                      {LANGUAGES.map((l) => (
+                        <option key={l} value={l}>
+                          {l === 'auto' ? 'Auto (follow me)' : l}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </Group>
                 <Group title="Board" footer='Or just say it: "make the board blue", "animal pieces".'>
                   <div className="row swatches" role="radiogroup" aria-label="Board colours">
                     {(Object.keys(BOARD_THEMES) as BoardTheme[]).map((k) => (
@@ -484,10 +530,8 @@ export function App() {
       {!apiKey && (
         <Modal title="Bring your Gemini key">
           <form onSubmit={saveKey} className="stack">
-            <span className="logo big" aria-hidden>
-              ♞
-            </span>
-            <h2>Talk to play chess</h2>
+            <Avatar mood="happy" size={88} className="hero-avatar" />
+            <h2>Hi, I'm Squarely!</h2>
             <p>
               Squarely uses Gemini Live, straight from your browser. Paste a key from{' '}
               <a href="https://aistudio.google.com/apikey" target="_blank" rel="noreferrer">
@@ -576,9 +620,12 @@ function Transcript({ lines }: { lines: TranscriptLine[] }) {
     <div className="transcript" ref={box} aria-label="Conversation">
       {!lines.length && <p className="caption center">Your conversation with Squarely shows up here.</p>}
       {lines.map((l, i) => (
-        <div key={i} className={`bubble ${l.who}`}>
-          {l.text}
-          {l.who === 'buddy' && <Receipts sources={l.sources} />}
+        <div key={i} className={`msg ${l.who}`}>
+          {l.who === 'buddy' && <Avatar mood="idle" size={28} className="msg-avatar" />}
+          <div className={`bubble ${l.who}`}>
+            {l.text}
+            {l.who === 'buddy' && <Receipts sources={l.sources} />}
+          </div>
         </div>
       ))}
     </div>

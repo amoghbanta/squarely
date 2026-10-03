@@ -42,6 +42,11 @@ type KidMoveLog = {
   afterHint: boolean
 }
 
+export type Mark = { square: Square; kind: 'danger' | 'focus' | 'target' }
+export type Arrow = { from: Square; to: Square; kind: 'move' | 'threat' | 'option' }
+export type Marks = { squares: Mark[]; arrows: Arrow[] }
+export type BuddyMood = 'worried' | 'happy' | null
+
 export type TranscriptLine = { who: 'kid' | 'buddy'; text: string; sources: string[]; done?: boolean }
 
 export type GameSnapshot = {
@@ -66,14 +71,17 @@ export type GameSnapshot = {
   panel: Panel
   summaryLine: string | null
   micOffSeq: number
+  marks: Marks
+  mood: BuddyMood
+  hintOpen: boolean
 }
 
 export type Panel = 'summary' | 'scout' | 'help' | null
-export type Settings = { boardTheme: BoardTheme; pieceStyle: PieceStyle; showTrace: boolean }
+export type Settings = { boardTheme: BoardTheme; pieceStyle: PieceStyle; showTrace: boolean; language: string }
 
 const SETTINGS_KEY = 'squarely.settings.v1'
 const loadSettings = (): Settings => {
-  const d: Settings = { boardTheme: 'meadow', pieceStyle: 'friends', showTrace: true }
+  const d: Settings = { boardTheme: 'meadow', pieceStyle: 'friends', showTrace: true, language: 'auto' }
   try {
     return { ...d, ...(JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>) }
   } catch {
@@ -107,6 +115,8 @@ export class GameController {
   kidsMode = readKidsMode()
   settings: Settings = loadSettings()
   panel: Panel = null
+  private marks: Marks = { squares: [], arrows: [] }
+  private mood: BuddyMood = null
   summaryLine: string | null = null
   private scoutReport: ScoutReport | null = null
   private scouting = false
@@ -162,6 +172,9 @@ export class GameController {
       panel: this.panel,
       summaryLine: this.summaryLine,
       micOffSeq: this.micOffSeq,
+      marks: this.marks,
+      hintOpen: this.hintOpen,
+      mood: this.mood,
       scouting: this.scouting,
       scoutProgress: this.scoutProgress,
       pendingOptions: this.pending,
@@ -280,6 +293,7 @@ export class GameController {
     const r = resolveMove(this.chess, intent, this.pending)
     if (r.status === 'ask') {
       this.pending = r.options
+      this.point(r.options.map((o) => ({ from: o.from, to: o.to, kind: 'option' as const })), r.options.map((o) => ({ square: o.from, kind: 'focus' as const })))
       this.say(`${r.question} ${r.options.map((o, i) => `${i + 1}: ${o.label}`).join('. ')}`)
       this.log('Referee', 'Ambiguous → ask kid', { question: r.question, options: r.options.map((o) => o.san) }, performance.now() - t0)
       return { status: 'need_clarification', question: r.question, options: r.options.map((o, i) => ({ option: i + 1, ...o })) }
@@ -298,6 +312,8 @@ export class GameController {
     const cpBefore = await this.kidEval(fenBefore)
     const move = this.chess.move(r.move)
     this.lastMove = { from: move.from, to: move.to }
+    this.marks = { squares: [], arrows: [] }
+    this.mood = null
     const you = this.describe(move)
     this.say(`You moved your ${you.piece} to ${move.to}${you.captured ? `, taking a ${you.captured}` : ''}.`)
     this.log('Referee', `Legal ✓ ${move.san}`, intent, performance.now() - t0)
@@ -326,7 +342,8 @@ export class GameController {
     const canHint = kidMoveIdx - this.lastHintAtKidMove >= HINT_COOLDOWN_KID_MOVES
     let motif: string | null = null
     let hintFacts: Record<string, unknown> | null = null
-    if (blunder) ({ motif, hintFacts } = await this.punishment())
+    let dangerSquares: string[] = []
+    if (blunder) ({ motif, hintFacts, squares: dangerSquares = [] } = await this.punishment())
     this.kidMoves.push({ san: move.san, wpBefore, wpAfter, blunder, motif, afterHint })
     this.log(
       'Tutor',
@@ -340,6 +357,9 @@ export class GameController {
     if (blunder && canHint) {
       this.lastHintAtKidMove = kidMoveIdx
       this.hintOpen = true
+      // Point at the piece in danger (never at the answer) and look worried.
+      this.point([], dangerSquares.map((q) => ({ square: q as Square, kind: 'danger' as const })))
+      this.mood = 'worried'
       this.say(`${this.announce} Wait! Something is in danger. Say undo to try again, or keep going.`)
       this.thinking = false
       this.emit()
@@ -360,7 +380,7 @@ export class GameController {
     return {
       status: 'played',
       you_played: you,
-      praise: afterHint && !blunder ? 'kid fixed the mistake after the hint question' : undefined,
+      praise: afterHint && !blunder ? (this.setMood('happy'), 'kid fixed the mistake after the hint question') : undefined,
       opponent_played: opp,
     }
   }
@@ -391,6 +411,7 @@ export class GameController {
       ? this.chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] ?? 'q' })
       : this.chess.move(this.chess.moves()[0])
     this.lastMove = { from: move.from, to: move.to }
+    this.point([{ from: move.from, to: move.to, kind: 'move' }], [])
     const opp = this.describe(move)
     this.say(`Buddy moved the ${opp.piece} to ${move.to}${opp.captured ? `, taking your ${opp.captured}` : ''}${opp.check ? '. Check!' : '.'}`)
     this.thinking = false
@@ -428,6 +449,14 @@ export class GameController {
       overall: feeling,
       material: { yours: this.kidColor === 'w' ? m.white : m.black, theirs: this.kidColor === 'w' ? m.black : m.white },
     }
+    const under = threatsAgainst(c, this.kidColor)
+    this.point(
+      under.flatMap((t) => t.attackers.map((a) => ({ from: a.square, to: t.victim.square, kind: 'threat' as const }))),
+      [
+        ...under.map((t) => ({ square: t.victim.square, kind: 'danger' as const })),
+        ...targets.map((t) => ({ square: t.square, kind: 'target' as const })),
+      ],
+    )
     this.log('Tutor', 'analyse_position', { threats: threats.length, targets: targets.length, overall: feeling }, performance.now() - t0)
     return out
   }
@@ -439,9 +468,11 @@ export class GameController {
     if (focus === 'king') {
       const k = kingSquare(c, me)
       out = { your_king: { square: k, where: whereIs(k, me), in_check: c.inCheck() && c.turn() === me } }
+      this.point([], [{ square: k, kind: 'focus' }])
     } else if (focus === 'last_move') {
       const h = c.history({ verbose: true })
       const m = h[h.length - 1]
+      if (m) this.point([{ from: m.from, to: m.to, kind: 'move' }], [])
       out = m ? { last_move: { by: m.color === me ? 'you' : 'buddy', piece: nameOf(m.piece), from: m.from, to: m.to, captured: m.captured ? nameOf(m.captured) : null } } : { last_move: null }
     } else {
       const { yours, theirs } = boardListing(c, me)
@@ -469,6 +500,8 @@ export class GameController {
     const prev = this.chess.history({ verbose: true }).at(-1)
     this.lastMove = prev ? { from: prev.from, to: prev.to } : null
     this.pending = null
+    this.marks = { squares: [], arrows: [] }
+    this.mood = null
     this.say('Move taken back. Your turn!')
     this.log('Referee', 'Undo', { undone })
     return { status: 'undone', moves_taken_back: undone.length, your_turn: true, hint_still_open: this.hintOpen }
@@ -507,6 +540,7 @@ export class GameController {
     this.profile = p
     saveProfile(p)
     this.log('Memory', 'Game recorded', { over })
+    if (over === 'checkmate_kid_wins') this.mood = 'happy'
     this.summaryLine = this.gameSummary().parent_line
     this.panel = 'summary'
   }
@@ -633,6 +667,8 @@ export class GameController {
     this.hintOpen = false
     this.gameRecorded = false
     this.panel = null
+    this.marks = { squares: [], arrows: [] }
+    this.mood = null
     this.say(`New game! You play ${colorName(this.kidColor)}.`)
     this.log('Referee', 'New game', { you_play: colorName(this.kidColor) })
     // Playing black: the buddy opens.
@@ -641,12 +677,25 @@ export class GameController {
     return { status: 'new_game', you_play: colorName(this.kidColor), opponent_played: opening }
   }
 
+  // ---------- Pointing (board annotations) and mood ----------
+  /** Squarely "points" at the board: only squares that a tool result just computed. */
+  private point(arrows: Arrow[], squares: Mark[]) {
+    this.marks = { arrows, squares }
+    this.emit()
+  }
+
+  private setMood(m: BuddyMood) {
+    this.mood = m
+    this.emit()
+  }
+
   // ---------- Settings & screens (all reachable by voice) ----------
   changeSettings(args: Record<string, unknown>): Record<string, unknown> {
     const changed: Record<string, unknown> = {}
     if (isBoardTheme(args.board_theme)) changed.board_theme = this.settings.boardTheme = args.board_theme
     if (isPieceStyle(args.piece_style)) changed.piece_style = this.settings.pieceStyle = args.piece_style
     if (typeof args.show_agent_trace === 'boolean') changed.show_agent_trace = this.settings.showTrace = args.show_agent_trace
+    if (typeof args.language === 'string' && args.language.trim()) changed.language = this.settings.language = args.language.trim().slice(0, 30)
     if (typeof args.kids_mode === 'boolean') changed.kids_mode = this.setKidsMode(args.kids_mode).kids_mode
     if (typeof args.level === 'number') changed.level = this.setLevel(args.level).level
     this.settings = { ...this.settings }

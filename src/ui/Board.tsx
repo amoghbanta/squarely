@@ -4,12 +4,14 @@ import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from 'react'
 import { CHARACTER } from '../chess/facts'
 
 import { ANIMAL, BOARD_THEMES, GLYPH, LETTER, type BoardTheme, type PieceStyle } from './themes'
+import type { Marks } from '../game/controller'
 
 const PLAIN: Record<string, string> = { k: 'king', q: 'queen', r: 'rook', b: 'bishop', n: 'knight', p: 'pawn' }
 
 type Props = {
   kidsMode: boolean
   boardTheme: BoardTheme
+  marks: Marks
   pieceStyle: PieceStyle
   fen: string
   pov: Color
@@ -19,13 +21,22 @@ type Props = {
   onMove: (from: Square, to: Square) => void
 }
 
+/** Centre of a square in board coordinates (0..800). */
+const centre = (sq: Square, pov: Color) => {
+  const f = sq.charCodeAt(0) - 97
+  const r = Number(sq[1]) - 1
+  const col = pov === 'w' ? f : 7 - f
+  const row = pov === 'w' ? 7 - r : r
+  return { x: col * 100 + 50, y: row * 100 + 50 }
+}
+
 const sqAt = (col: number, row: number, pov: Color): Square => {
   const file = pov === 'w' ? col : 7 - col
   const rank = pov === 'w' ? 7 - row : row
   return `${'abcdefgh'[file]}${rank + 1}` as Square
 }
 
-export function Board({ kidsMode, boardTheme, pieceStyle, fen, pov, lastMove, checkSquare, disabled, onMove }: Props) {
+export function Board({ kidsMode, marks, boardTheme, pieceStyle, fen, pov, lastMove, checkSquare, disabled, onMove }: Props) {
   const chess = useMemo(() => new Chess(fen), [fen])
   const [selected, setSelected] = useState<Square | null>(null)
   const [cursor, setCursor] = useState<[number, number]>([4, 6])
@@ -142,6 +153,37 @@ export function Board({ kidsMode, boardTheme, pieceStyle, fen, pov, lastMove, ch
           </g>
         )
       })}
+      {/* Squarely points: rings and arrows drawn only from computed tool results */}
+      <g className="marks" pointerEvents="none">
+        <defs>
+          {(['move', 'threat', 'option'] as const).map((k) => (
+            <marker key={k} id={`head-${k}`} viewBox="0 0 10 10" refX="6" refY="5" markerWidth="4" markerHeight="4" orient="auto-start-reverse">
+              <path d="M0 0 L10 5 L0 10 z" className={`head-${k}`} />
+            </marker>
+          ))}
+        </defs>
+        {marks.squares.map((m) => {
+          const c = centre(m.square, pov)
+          return <rect key={`${m.kind}-${m.square}`} x={c.x - 46} y={c.y - 46} width="92" height="92" rx="16" className={`mark mark-${m.kind}`} />
+        })}
+        {marks.arrows.map((a) => {
+          const f = centre(a.from, pov)
+          const t = centre(a.to, pov)
+          const len = Math.hypot(t.x - f.x, t.y - f.y) || 1
+          const shorten = 26
+          return (
+            <line
+              key={`${a.kind}-${a.from}-${a.to}`}
+              x1={f.x}
+              y1={f.y}
+              x2={t.x - ((t.x - f.x) / len) * shorten}
+              y2={t.y - ((t.y - f.y) / len) * shorten}
+              className={`arrow arrow-${a.kind}`}
+              markerEnd={`url(#head-${a.kind})`}
+            />
+          )
+        })}
+      </g>
     </svg>
     {/* Screen readers don't reliably re-read a changing aria-label, so the cursor is announced here. */}
     <div className="sr-only" aria-live="polite">

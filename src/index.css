@@ -169,17 +169,56 @@ a { color: var(--tint); }
 .dock { width: min(100%, 620px); display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 4px 8px; }
 .mic-wrap { display: grid; justify-items: center; gap: 6px; }
 .mic {
-  display: grid; place-items: center; width: 76px; height: 76px; border-radius: 50%;
-  background: var(--tint); color: #fff; font-size: 32px;
-  box-shadow: 0 6px 20px rgba(94, 92, 230, 0.4), 0 0 0 calc(var(--lvl, 0) * 16px) rgba(94, 92, 230, 0.18);
-  transition: transform 0.15s ease, box-shadow 0.08s linear, background 0.2s ease;
+  position: relative; display: grid; place-items: center; width: 92px; height: 92px; border-radius: 30px;
+  background: transparent; filter: drop-shadow(0 8px 18px rgba(94, 92, 230, 0.35));
+  box-shadow: 0 0 0 calc(var(--lvl, 0) * 14px) rgba(94, 92, 230, 0.16);
+  transition: transform 0.15s ease, box-shadow 0.08s linear;
 }
 .mic:active { transform: scale(0.95); }
-.mic.on { background: var(--red); box-shadow: 0 6px 20px rgba(255, 59, 48, 0.35), 0 0 0 calc(var(--lvl, 0) * 16px) rgba(255, 59, 48, 0.18); font-size: 26px; }
-.mic.speaking { animation: breathe 1.2s ease-in-out infinite; }
+.mic.on { box-shadow: 0 0 0 calc(4px + var(--lvl, 0) * 16px) rgba(52, 199, 89, 0.22); }
+.mic .rec {
+  position: absolute; right: -2px; bottom: -2px; display: grid; place-items: center; width: 28px; height: 28px;
+  border-radius: 50%; background: var(--red); color: #fff; font-size: 15px; box-shadow: 0 0 0 3px var(--bg);
+}
 .mic.connecting { animation: pulse 1s ease-in-out infinite; }
-@keyframes breathe { 50% { transform: scale(1.06); } }
-@media (prefers-reduced-motion: reduce) { .mic.speaking, .mic.connecting, .status.busy .dot { animation: none; } }
+
+/* Squarely's face */
+.avatar { display: block; overflow: visible; }
+.avatar g { transform-box: fill-box; }
+.avatar .av-eye { transform-box: fill-box; transform-origin: center; animation: blink 5.5s infinite; }
+.avatar .av-eye + .av-eye { animation-delay: 0.04s; }
+.mood-talking .av-body, .mood-happy .av-body { transform-origin: 50% 90%; animation: bob 0.5s ease-in-out infinite alternate; }
+.mood-listening .av-body { transform-origin: 50% 50%; animation: attend 1.6s ease-in-out infinite; }
+.mood-thinking .av-eyes { animation: ponder 1.4s ease-in-out infinite alternate; }
+.mood-idle .av-body { transform-origin: 50% 90%; animation: float 3.2s ease-in-out infinite; }
+@keyframes blink { 0%, 92%, 100% { transform: scaleY(1); } 95% { transform: scaleY(0.1); } }
+@keyframes bob { to { transform: translateY(-2px) scale(1.02, 0.98); } }
+@keyframes attend { 50% { transform: scale(1.03); } }
+@keyframes ponder { to { transform: translateX(3px); } }
+@keyframes float { 50% { transform: translateY(-1.5px); } }
+@media (prefers-reduced-motion: reduce) { .avatar * { animation: none !important; } }
+.logo-avatar { flex: none; }
+.hero-avatar { justify-self: center; }
+.msg { display: flex; gap: 8px; align-items: flex-end; }
+.msg.kid { justify-content: flex-end; }
+.msg-avatar { flex: none; margin-bottom: 2px; }
+
+/* Squarely points at the board */
+.mark { fill: none; stroke-width: 7; }
+.mark-danger { stroke: #ff3b30; animation: throb 1.1s ease-in-out infinite; }
+.mark-focus { stroke: var(--tint); }
+.mark-target { stroke: #34c759; stroke-dasharray: 10 8; }
+@keyframes throb { 50% { stroke-opacity: 0.35; } }
+.arrow { stroke-width: 12; stroke-linecap: round; opacity: 0.85; }
+.arrow-move { stroke: rgba(94, 92, 230, 0.85); }
+.arrow-threat { stroke: rgba(255, 59, 48, 0.85); }
+.arrow-option { stroke: rgba(255, 149, 0, 0.85); stroke-dasharray: 2 22; }
+.head-move { fill: rgba(94, 92, 230, 0.95); }
+.head-threat { fill: rgba(255, 59, 48, 0.95); }
+.head-option { fill: rgba(255, 149, 0, 0.95); }
+@media (prefers-reduced-motion: reduce) { .mark-danger { animation: none; } }
+
+.ios-select { border: 0; background: transparent; color: var(--label-2); font-size: 17px; text-align: right; max-width: 60%; }
 .mic-label { font-size: 13px; font-weight: 600; color: var(--label-2); }
 .type { flex: 1; display: flex; align-items: center; gap: 8px; }
 .type input {
@@ -314,7 +353,8 @@ a { color: var(--tint); }
     background: var(--blur-bg); backdrop-filter: saturate(180%) blur(20px); -webkit-backdrop-filter: saturate(180%) blur(20px);
     border-top: 0.5px solid var(--separator);
   }
-  .mic { width: 68px; height: 68px; font-size: 28px; }
+  .mic { width: 80px; height: 80px; }
+  .mic .avatar { width: 76px; height: 76px; }
   .live-state { display: none; }
 
   .side.sheet {
