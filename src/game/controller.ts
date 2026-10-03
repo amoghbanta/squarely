@@ -278,6 +278,14 @@ export class GameController {
         hintFacts: { kind: 'one of your pieces can be taken for free', victim: { piece: KID_NAME[m.captured], where: whereIs(m.to, this.kidColor) }, attacker },
       }
     }
+    // Otherwise: name the most valuable kid piece the reply puts in danger.
+    const victim = threatsAgainst(copy, this.kidColor).find((t) => t.hanging || t.attackers.some((a) => a.square === m.to))
+    if (victim) {
+      return {
+        motif: 'piece_in_danger',
+        hintFacts: { kind: 'one of your pieces will be in danger', victim: { piece: victim.victim.name, where: victim.victim.where }, attacker },
+      }
+    }
     return { motif: 'loses_material', hintFacts: { kind: 'the opponent has a strong reply', attacker } }
   }
 
@@ -431,7 +439,7 @@ export class GameController {
       record: { games: p.gamesPlayed, wins: p.wins, losses: p.losses, draws: p.draws },
       recurring_mistakes: topMistakes(p),
     }
-    const line = `${summary.name} played ${summary.moves_played} moves${motifs.length ? `, practised ${motifs.join(' & ').replace(/_/g, ' ')}` : ''}${fixed ? `, fixed ${fixed} mistake${fixed > 1 ? 's' : ''} after a hint` : ''}. Record: won ${p.wins} of ${p.gamesPlayed}.${summary.best_move ? ` Best move: ${summary.best_move}.` : ''}`
+    const line = `${summary.name} played ${summary.moves_played} move${summary.moves_played === 1 ? '' : 's'}${motifs.length ? `, practised ${motifs.join(' & ').replace(/_/g, ' ')}` : ''}${fixed ? `, fixed ${fixed} mistake${fixed > 1 ? 's' : ''} after a hint` : ''}. Record: won ${p.wins} of ${p.gamesPlayed}.${summary.best_move ? ` Best move: ${summary.best_move}.` : ''}`
     this.profile = { ...p, lastSummary: line }
     saveProfile(this.profile)
     this.log('Memory', 'game_summary', line)

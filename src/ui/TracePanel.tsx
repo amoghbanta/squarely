@@ -4,7 +4,9 @@ import type { TraceEntry } from '../game/controller'
 
 export function TracePanel({ trace }: { trace: TraceEntry[] }) {
   const end = useRef<HTMLDivElement>(null)
-  useEffect(() => end.current?.scrollIntoView({ block: 'end' }), [trace.length])
+  useEffect(() => {
+    void end.current?.scrollIntoView({ block: 'end' })
+  }, [trace.length])
   return (
     <section className="trace" aria-label="Agent trace">
       <h2>Agent trace</h2>
