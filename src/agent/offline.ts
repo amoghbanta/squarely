@@ -46,6 +46,14 @@ export function parseOffline(text: string): Pick<FunctionCall, 'name' | 'args'> 
   if (/back to (my|the|our) game/.test(t)) return { name: 'stop_puzzle', args: {} }
   if (/\bclose\b/.test(t)) return { name: 'show_screen', args: { screen: 'game' } }
   if (/play (as )?black/.test(t)) return { name: 'new_game', args: { color: 'black' } }
+  if (/\b(pause|take a break|break time)\b/.test(t)) return { name: 'pause_game', args: {} }
+  if (/\b(resume|unpause)\b/.test(t)) return { name: 'resume_game', args: {} }
+  if (/review (my |the )?(last |old )?game/.test(t)) return { name: 'open_game', args: { action: 'review', which: 'last' } }
+  if (/continue (my |the )?(last |old |saved )?game/.test(t)) return { name: 'open_game', args: { action: 'continue', which: 'last' } }
+  if (/done reviewing|stop review/.test(t)) return { name: 'stop_review', args: {} }
+  if (/next mistake|show (me )?my mistakes/.test(t)) return { name: 'review_step', args: { go: 'next_mistake' } }
+  if (/^(next( move)?|forward)$/.test(t)) return { name: 'review_step', args: { go: 'next' } }
+  if (/^(back|go back|previous( move)?)$/.test(t)) return { name: 'review_step', args: { go: 'back' } }
   if (/how (do|does) (the )?pieces? move|teach me|i'?m new|don'?t know how to play|never played|learn chess|next lesson|start (a )?lesson/.test(t))
     return { name: 'start_lesson', args: { lesson: /next/.test(t) ? 'next' : t } }
   const howMoves = t.match(/how (?:does|do|can) (?:the |a |my )?(pawn|knight|horse|bishop|rook|castle|queen|king)s? (?:move|go|work)/)
@@ -108,6 +116,22 @@ export function phraseOffline(name: string, r: Record<string, unknown>): string 
   if (name === 'make_move' && opp) {
     return `${r.praise ? 'Brilliant, you found it! ' : ''}I moved my ${opp.piece} to ${opp.to}${opp.captured ? ` and took your ${opp.captured}` : ''}${opp.your_king_in_check ? '. Check!' : '.'}`
   }
+  if (name === 'pause_game') return r.status === 'paused' ? 'Game paused and saved. Say "resume" when you are ready.' : 'There is no game to pause right now.'
+  if (name === 'resume_game') return r.status === 'resumed' ? 'Welcome back! Your move.' : 'The game is not paused.'
+  if (name === 'open_game') {
+    if (r.status === 'no_saved_games') return 'There are no saved games yet.'
+    if (r.status === 'already_finished') return 'That game is finished. Say "review my last game" to look at it.'
+    if (r.status === 'continued') return `Here is your saved game, ${r.moves_so_far} moves in. Your move!`
+    return `Reviewing your game from ${r.played_on}. Say "next" to step through it.`
+  }
+  if (name === 'review_step') {
+    if (r.status === 'not_reviewing') return 'Say "review my last game" first.'
+    if (!r.move) return 'This is the starting position. Say "next".'
+    const mv = r.move as { piece: string; to: string }
+    const b = r.better_move as { piece: string; to: string } | undefined
+    return `Move ${r.at_move}: ${r.by === 'you' ? 'you' : 'I'} moved the ${mv.piece} to ${mv.to}${r.grade ? ` (${r.grade})` : ''}.${b ? ` Better was the ${b.piece} to ${b.to}: see the green arrow.` : ''}`
+  }
+  if (name === 'stop_review') return r.status === 'no_puzzle' ? 'We are not reviewing anything.' : 'Back to our game!'
   if (name === 'start_lesson') {
     if (r.status === 'all_lessons_done') return 'You know how every piece moves! Say "give me a puzzle" or "new game".'
     return `${r.lesson}! ${r.how_it_moves} ${r.task}`

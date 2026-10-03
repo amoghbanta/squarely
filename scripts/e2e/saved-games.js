@@ -1,0 +1,47 @@
+// Saved games: autosave, pause/resume, continue after a reload-like restart, review with grades.
+(async () => {
+  const { game, runTool } = window.__squarely
+  const R = (name, args = {}) => runTool(game, { name, args })
+  const { listGames } = await import('/src/memory/games.ts')
+  const out = {}
+  const ok = (k, cond, extra) => (out[k] = cond ? 'PASS' : `FAIL ${JSON.stringify(extra ?? '').slice(0, 300)}`)
+  await R('new_game', { color: 'white' })
+  await R('make_move', { san: 'e4' })
+  await R('make_move', { san: 'Nf3' })
+  let saved = listGames()
+  ok('autosaved', saved.length === 1 && saved[0].moves === 4 && saved[0].result === null, saved)
+  let r = await R('pause_game')
+  ok('paused', r.status === 'paused' && game.getSnapshot().paused, r)
+  r = await R('make_move', { san: 'd4' })
+  ok('no_moves_while_paused', r.status === 'paused', r)
+  r = await R('engine_reply')
+  ok('continue_means_resume', r.status === 'resumed' && !game.getSnapshot().paused, r)
+  const fenA = game.chess.fen()
+  // a second game, then continue the first
+  await R('new_game', { color: 'black' })
+  r = await R('open_game', { action: 'continue', which: 'last' })
+  ok('continue_first_game', r.status === 'continued' && game.chess.fen() === fenA && game.kidColor === 'w', { r, fen: game.chess.fen() })
+  // finish a game with a blunder, then review it
+  await R('new_game', { color: 'white' })
+  await R('make_move', { san: 'e4' })
+  r = await R('make_move', { san: 'Ba6' })
+  await R('engine_reply')
+  saved = listGames()
+  r = await R('open_game', { action: 'review', which: '1' })
+  ok('review_opens', r.status === 'reviewing' && game.getSnapshot().review?.ply === 0, r)
+  r = await R('review_step', { go: 'next_mistake' })
+  ok('review_finds_blunder', r.by === 'you' && ['mistake', 'blunder'].includes(r.grade) && !!r.better_move && game.getSnapshot().marks.arrows.some((a) => a.kind === 'suggest'), r)
+  r = await R('review_step', { go: 'back' })
+  ok('review_back', r.at_move === 2, r)
+  r = await R('make_move', { san: 'd4' })
+  ok('no_moves_in_review', r.status === 'reviewing', r)
+  const before = listGames().map((g) => g.id + g.moves).join()
+  r = await R('stop_review')
+  ok('review_untouched_saves', listGames().map((g) => g.id + g.moves).join() === before, { before, after: listGames().map((g) => g.id + g.moves) })
+  ok('stop_review_back', !game.getSnapshot().review, r)
+  // the app opening again picks up the unfinished game
+  const { GameController } = await import('/src/game/controller.ts')
+  const fresh = new GameController()
+  ok('resumes_on_open', fresh.chess.history().length > 0 && fresh.chess.fen() === game.chess.fen(), { fresh: fresh.chess.fen(), now: game.chess.fen() })
+  return out
+})()

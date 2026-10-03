@@ -590,3 +590,21 @@ a { color: var(--tint); }
 .mood-listening .av-ears { transform: translateY(-2.5px) scaleY(1.06); }
 .lesson-how { margin: 0; font-size: 15px; line-height: 1.4; color: var(--label-2); }
 .topbar .seg button { padding: 7px 14px; }
+
+/* ---------- pause, replay, saved games ---------- */
+.status-row { display: flex; align-items: center; gap: 8px; }
+.pause-btn { width: 36px; height: 36px; border-radius: 50%; background: var(--fill); color: var(--label); font-size: 14px; display: grid; place-items: center; }
+.pause-btn:active { transform: scale(0.94); }
+.status.paused .dot { background: #ff9f0a; }
+.board-wrap { position: relative; width: var(--board-w); max-width: var(--board-w); }
+.board-wrap .board { width: 100%; }
+.paused-veil {
+  position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 14px; border-radius: 22px;
+  background: rgba(20, 18, 40, 0.55); backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); color: #fff; animation: fade 0.2s ease;
+}
+.paused-veil p { margin: 0; font: 700 20px var(--rounded); }
+.paused-veil .primary { min-height: 50px; padding: 0 28px; font-size: 18px; }
+.review-move { font: 600 15px var(--rounded); color: var(--label); }
+.review-grade { font-weight: 700; }
+.game-row { gap: 8px; }
+.game-row .pill-btn { min-height: 36px; padding: 4px 12px; font-size: 14px; }

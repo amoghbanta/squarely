@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type FormEvent } from 'react'
 import type { Square } from 'chess.js'
 import { localVoice, type LocalVoiceStatus } from './voice/localVoice'
-import { game, type LessonView, type PuzzleView, type TranscriptLine } from './game/controller'
+import { game, type LessonView, type PuzzleView, type ReviewView, type TranscriptLine } from './game/controller'
+import { GRADE } from './ui/grades'
 import { LESSONS } from './chess/lessons'
 import { PUZZLE_THEMES, THEME_INFO, type PuzzleTheme } from './chess/puzzles'
 import { Board } from './ui/Board'
@@ -375,7 +376,11 @@ export function App() {
             : { text: 'Lost the connection. Your game is safe.', action: 'retry' as const }
       : null
 
-  const status = s.lesson
+  const status = s.paused
+    ? 'Paused'
+    : s.review
+      ? `Replay · move ${s.review.ply} of ${s.review.total}`
+      : s.lesson
     ? s.lesson.done
       ? 'Lesson done!'
       : 'Lesson: your move'
@@ -422,7 +427,7 @@ export function App() {
   type Action = { label: string; run: () => void; primary?: boolean }
   const kidHasMoved = s.moves.some((m) => m.color === s.kidColor)
   const pieceWord = s.lesson ? (['rook', 'bishop', 'queen', 'king', 'knight', 'pawn'] as const)[s.lesson.index] : null
-  const actions: Action[] = s.pendingOptions?.length
+  const actions: Action[] = s.pendingOptions?.length || s.paused
     ? []
     : s.lesson
       ? s.lesson.done
@@ -433,6 +438,13 @@ export function App() {
         : [
             { label: 'How does it move?', primary: true, run: () => void act('explain_piece', { piece: pieceWord }, 'How does it move?') },
             { label: 'Start over', run: () => void act('undo', {}, 'Start the lesson over') },
+          ]
+      : s.review
+        ? [
+            { label: '◀', run: () => void act('review_step', { go: 'back' }, 'Previous move') },
+            { label: 'Next ▶', primary: true, run: () => void act('review_step', { go: 'next' }, 'Next move') },
+            { label: 'My mistakes', run: () => void act('review_step', { go: 'next_mistake' }, 'Show my next mistake') },
+            { label: 'Done', run: () => void act('stop_review', {}, 'Done reviewing') },
           ]
       : s.puzzle
       ? s.puzzle.solved
@@ -627,11 +639,19 @@ export function App() {
 
       <main className="layout" inert={modalOpen}>
         <section className="stage" aria-label="Game">
-          <div className={`status ${s.thinking ? 'busy' : ''} ${s.over ? 'over' : ''}`} aria-hidden>
-            <span className="dot" />
-            {status}
+          <div className="status-row">
+            <div className={`status ${s.thinking ? 'busy' : ''} ${s.over ? 'over' : ''} ${s.paused ? 'paused' : ''}`} aria-hidden>
+              <span className="dot" />
+              {status}
+            </div>
+            {!s.puzzle && !s.lesson && !s.review && !s.over && s.moves.length > 0 && !s.paused && (
+              <button className="pause-btn" onClick={() => void act('pause_game', {}, 'Pause')} aria-label="Pause the game">
+                ⏸
+              </button>
+            )}
           </div>
           <ScoutActivity scouting={s.scouting} progress={s.scoutProgress} report={s.scoutReport} onOpen={() => setYouOpen(true)} />
+          <div className="board-wrap">
           <Board
             marks={s.marks}
             kidsMode={s.kidsMode}
@@ -642,10 +662,21 @@ export function App() {
             lastMove={s.lastMove}
             lastGrade={s.puzzle ? null : (s.moves.at(-1)?.grade ?? null)}
             checkSquare={s.checkSquare}
-            disabled={s.thinking || (!!s.over && !s.puzzle) || !!s.puzzle?.solved || !!s.lesson?.done}
+            disabled={s.thinking || (!!s.over && !s.puzzle) || !!s.puzzle?.solved || !!s.lesson?.done || !!s.review || s.paused}
             onMove={onBoardMove}
           />
-          {s.lesson ? (
+          {s.paused && (
+            <div className="paused-veil">
+              <p>Paused. Your game is saved.</p>
+              <button className="primary" onClick={() => void act('resume_game', {}, 'Resume')}>
+                ▶ Resume
+              </button>
+            </div>
+          )}
+          </div>
+          {s.review ? (
+            <ReviewLine rv={s.review} />
+          ) : s.lesson ? (
             <LessonLine ls={s.lesson} onPick={(id) => void act('start_lesson', { lesson: id }, `${id} lesson`)} />
           ) : s.puzzle ? (
             <PuzzleLine pz={s.puzzle} onTheme={(t) => void act('start_puzzle', { theme: t }, `${THEME_INFO[t].label} puzzle`)} />
@@ -707,6 +738,32 @@ export function App() {
               <span>puzzles</span>
             </div>
           </div>
+
+          {s.savedGames.length > 0 && (
+            <Group title="Your games" footer="Every game saves itself after each move.">
+              {s.savedGames.slice(0, 6).map((g, i) => (
+                <div className="row game-row" key={g.id}>
+                  <span className="row-text">
+                    <span>
+                      {g.id === s.gameId && !s.puzzle && !s.lesson && !s.review ? 'Playing now' : g.result === 'won' ? '🏆 Won' : g.result === 'lost' ? 'Lost' : g.result === 'draw' ? 'Draw' : 'In progress'} · {Math.ceil(g.moves / 2)} {Math.ceil(g.moves / 2) === 1 ? 'move' : 'moves'}
+                    </span>
+                    <small>
+                      {new Date(g.updated).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {new Date(g.updated).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                      {g.opening ? ` · ${g.opening}` : ''}
+                    </small>
+                  </span>
+                  {!g.result && (g.id !== s.gameId || !!s.puzzle || !!s.lesson || !!s.review) && (
+                    <button className="pill-btn ghost" onClick={() => (setYouOpen(false), void act('open_game', { action: 'continue', which: String(i + 1) }, 'Continue saved game'))}>
+                      Continue
+                    </button>
+                  )}
+                  <button className="pill-btn ghost" onClick={() => (setYouOpen(false), void act('open_game', { action: 'review', which: String(i + 1) }, 'Review saved game'))}>
+                    Review
+                  </button>
+                </div>
+              ))}
+            </Group>
+          )}
 
           <Group title="Game">
             <button className="row action" onClick={() => (setYouOpen(false), void act('new_game', {}, 'New game'))}>
@@ -969,6 +1026,31 @@ function Confetti() {
         </span>
       ))}
     </div>
+  )
+}
+
+// The replay under the board: which game, and the move being looked at with its grade.
+function ReviewLine({ rv }: { rv: ReviewView }) {
+  const g = rv.grade ? GRADE[rv.grade] : null
+  return (
+    <section className="puzzle-line" aria-label="Game replay">
+      <div className="pz-head">
+        <span className="pz-tag">Replay</span>
+        <span className="review-move">
+          {rv.san ? `${rv.by === 'you' ? 'You' : 'Squarely'}: ${rv.san}` : 'Start'}
+          {g && (
+            <span className="review-grade" style={{ color: g.color }}>
+              {' '}
+              {g.icon} {g.label}
+            </span>
+          )}
+        </span>
+        <span className="pz-src">
+          {new Date(rv.started).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })} · {rv.result ?? 'unfinished'}
+          {rv.opening ? ` · ${rv.opening}` : ''}
+        </span>
+      </div>
+    </section>
   )
 }
 

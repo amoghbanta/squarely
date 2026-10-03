@@ -24,6 +24,7 @@ import { hasMoveContent, heardMove } from '../chess/hearing'
 import { TALK_STYLE, type TalkStyle } from '../agent/prompt'
 import { resolveMove, type MoveIntent, type MoveOption } from '../chess/resolver'
 import { classifyPunishment, type Punishment } from '../chess/motifs'
+import { clearGames, listGames, newGameId, saveGame, type SavedGame } from '../memory/games'
 import { loadProfile, resetProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
 import { BOARD_THEMES, PIECE_STYLES, isBoardTheme, isPieceStyle, type BoardTheme, type PieceStyle } from '../ui/themes'
 import { runScout, type ScoutReport, type ScoutSource } from '../scout/scout'
@@ -89,6 +90,23 @@ export type GameSnapshot = {
   moves: PlayedMove[]
   puzzle: PuzzleView | null
   lesson: LessonView | null
+  review: ReviewView | null
+  paused: boolean
+  savedGames: SavedGame[]
+  gameId: string
+}
+
+/** A saved game being replayed move by move. */
+export type ReviewView = {
+  id: string
+  started: number
+  result: SavedGame['result']
+  opening: string | null
+  ply: number
+  total: number
+  san: string | null
+  by: 'you' | 'buddy' | null
+  grade: Grade | null
 }
 
 /** What the UI shows about the lesson in progress. */
@@ -205,6 +223,7 @@ export class GameController {
 
   constructor() {
     setKidsModeFacts(this.kidsMode)
+    this.resumeLastGame()
     this.snap = this.buildSnapshot()
   }
 
@@ -243,6 +262,10 @@ export class GameController {
       hintOpen: this.hintOpen,
       puzzle: this.puzzleView(),
       lesson: this.lessonView(),
+      review: this.reviewView(),
+      paused: this.paused,
+      savedGames: listGames(),
+      gameId: this.gameId,
       mood: this.mood,
       scouting: this.scouting,
       scoutProgress: this.scoutProgress,
@@ -323,7 +346,7 @@ export class GameController {
 
   private overReason(): string | null {
     // A puzzle's checkmate is the puzzle's answer, not the end of a game.
-    if (this.puzzle || this.lesson) return null
+    if (this.puzzle || this.lesson || this.review) return null
     const c = this.chess
     if (c.isCheckmate()) return c.turn() === this.kidColor ? 'checkmate_opponent_wins' : 'checkmate_kid_wins'
     if (c.isStalemate()) return 'stalemate'
@@ -356,6 +379,7 @@ export class GameController {
         this.thinking = false
         this.emit()
       }
+      this.persist()
     })
     this.lock = run.catch(() => undefined)
     return run
@@ -402,6 +426,8 @@ export class GameController {
   private async makeMoveInner(intent: MoveIntent): Promise<Record<string, unknown>> {
     if (this.puzzle) return this.puzzleMoveInner(intent)
     if (this.lesson) return this.lessonMoveInner(intent)
+    if (this.review) return { status: 'reviewing', instruction: 'This is a replay of an old game. Say "next move", "go back", or "done reviewing" (stop_review) to play again.' }
+    if (this.paused) return { status: 'paused', instruction: 'The game is paused. Ask if they want to resume (resume_game).' }
     if (this.overReason()) return { status: 'game_over', reason: this.overReason() }
     if (this.chess.turn() !== this.kidColor) return { status: 'not_your_turn' }
     const t0 = performance.now()
@@ -502,6 +528,8 @@ export class GameController {
   private async opponentMoveInner(): Promise<Record<string, unknown>> {
     if (this.puzzle) return { status: 'in_puzzle', instruction: 'A puzzle is on: the opponent only moves when the player finds the right move.' }
     if (this.lesson) return { status: 'in_lesson', instruction: 'In a lesson nobody moves against the player: they keep moving their piece.' }
+    if (this.review) return { status: 'reviewing' }
+    if (this.paused) return { status: 'paused', instruction: 'The game is paused. Ask if they want to resume (resume_game).' }
     if (this.overReason() || this.chess.turn() === this.kidColor) return { status: 'not_opponent_turn' }
     this.thinking = true
     this.emit()
@@ -995,6 +1023,191 @@ export class GameController {
     }
   }
 
+  // ---------- Saved games: autosave, continue, pause, review ----------
+  private gameId = newGameId()
+  private gameStarted = Date.now()
+  private paused = false
+  private review: { g: SavedGame; ply: number; moves: Move[] } | null = null
+
+  private resultOf(): SavedGame['result'] {
+    const over = this.overReason()
+    return over === 'checkmate_kid_wins' ? 'won' : over === 'checkmate_opponent_wins' ? 'lost' : over ? 'draw' : null
+  }
+
+  /** Save the real game after every change (never a puzzle, lesson or replay). */
+  private persist() {
+    if (this.puzzle || this.lesson || this.review) return
+    const h = this.chess.history()
+    if (!h.length) return
+    saveGame({
+      id: this.gameId,
+      started: this.gameStarted,
+      updated: Date.now(),
+      pgn: this.chess.pgn(),
+      kidColor: this.kidColor,
+      level: this.level,
+      result: this.resultOf(),
+      moves: h.length,
+      grades: [...this.grades],
+      opening: identifyOpening(h)?.name ?? null,
+    })
+  }
+
+  /** Opening the app continues the last unfinished game, exactly where it was left. */
+  private resumeLastGame() {
+    const g = listGames().find((x) => !x.result)
+    if (!g) return
+    try {
+      this.loadSaved(g)
+    } catch {
+      /* a corrupt save never blocks a fresh game */
+    }
+  }
+
+  private loadSaved(g: SavedGame) {
+    const c = new Chess()
+    c.loadPgn(g.pgn)
+    this.chess = c
+    this.kidColor = g.kidColor
+    this.grades = [...g.grades]
+    this.kidMoves = []
+    this.gameId = g.id
+    this.gameStarted = g.started
+    this.gameRecorded = !!g.result
+    this.hintOpen = false
+    this.pending = null
+    this.paused = false
+    const h = c.history({ verbose: true }).at(-1)
+    this.lastMove = h ? { from: h.from, to: h.to } : null
+  }
+
+  pauseGame() {
+    return this.exclusive(() => {
+      if (this.puzzle || this.lesson || this.review) return { status: 'not_in_a_game' }
+      this.paused = true
+      this.marks = { squares: [], arrows: [] }
+      this.say('Game paused. Say "resume" when you are ready.')
+      this.log('Memory', 'Game paused and saved')
+      return { status: 'paused', saved: true, instruction: 'Say the game is saved and paused, and they can say "resume" any time, even after closing the app.' }
+    })
+  }
+
+  resumeGame() {
+    return this.exclusive(async () => {
+      if (!this.paused) return { status: 'not_paused' }
+      this.paused = false
+      this.say('Game resumed. Your move!')
+      this.log('Memory', 'Game resumed')
+      const yourTurn = this.chess.turn() === this.kidColor
+      const opp = !yourTurn && !this.hintOpen && !this.overReason() ? await this.opponentMoveInner() : undefined
+      return { status: 'resumed', your_turn: this.chess.turn() === this.kidColor, moves_so_far: this.chess.history().length, opponent_played: opp }
+    })
+  }
+
+  /** "Continue my last game" / "review my last game". which: last | a number from the list (1 = newest) | an id. */
+  openGame(which: string | number | undefined, action: 'continue' | 'review') {
+    return this.exclusive(async () => {
+      const games = listGames()
+      const g =
+        typeof which === 'number' ? games[which - 1]
+        : which && which !== 'last' ? games.find((x) => x.id === which)
+        : action === 'continue' ? games.find((x) => !x.result && x.id !== this.gameId) ?? games.find((x) => !x.result)
+        : games.find((x) => x.id !== this.gameId || !!x.result) ?? games[0]
+      if (!g) return { status: 'no_saved_games', instruction: 'There are no saved games yet. Offer a new game.' }
+      if (action === 'continue') {
+        if (g.result) return { status: 'already_finished', result: g.result, instruction: 'That game is over. Offer to review it (open_game with action review).' }
+        this.persist()
+        this.puzzle = null
+        this.lesson = null
+        this.review = null
+        this.savedGame = null
+        this.loadSaved(g)
+        this.say('Here is your saved game. Your move!')
+        this.log('Memory', 'Continued a saved game', { moves: g.moves })
+        const opp = this.chess.turn() !== this.kidColor && !this.overReason() ? await this.opponentMoveInner() : undefined
+        return { status: 'continued', you_play: colorName(this.kidColor), moves_so_far: g.moves, opening: g.opening, opponent_played: opp }
+      }
+      this.parkGame()
+      this.puzzle = null
+      this.lesson = null
+      const c = new Chess()
+      c.loadPgn(g.pgn)
+      this.review = { g, ply: 0, moves: c.history({ verbose: true }) }
+      this.log('Memory', 'Reviewing a saved game', { moves: g.moves, result: g.result })
+      return { status: 'reviewing', played_on: new Date(g.started).toDateString(), result: g.result ?? 'unfinished', opening: g.opening, total_moves: g.moves, ...(await this.reviewAt(0)), instruction: 'Say what game this is in one sentence, then step through it with review_step when they say "next".' }
+    })
+  }
+
+  reviewStep(go: string) {
+    return this.exclusive(async () => {
+      const z = this.review
+      if (!z) return { status: 'not_reviewing', instruction: 'Offer to review a saved game (open_game).' }
+      const n = Number(go)
+      const ply =
+        go === 'next' ? z.ply + 1 : go === 'back' ? z.ply - 1 : go === 'start' ? 0 : go === 'end' ? z.moves.length
+        : go === 'next_mistake' ? (z.moves.findIndex((m, i) => i >= z.ply && m.color === z.g.kidColor && ['mistake', 'blunder'].includes(z.g.grades[i] ?? '')) + 1 || z.moves.length)
+        : Number.isFinite(n) ? n : z.ply
+      return this.reviewAt(Math.max(0, Math.min(z.moves.length, ply)))
+    })
+  }
+
+  /** Put the replay at ply n and say what happened on that move, with the engine's better idea for weak moves. */
+  private async reviewAt(ply: number): Promise<Record<string, unknown>> {
+    const z = this.review!
+    z.ply = ply
+    const c = new Chess()
+    for (const m of z.moves.slice(0, ply)) c.move(m.san)
+    this.chess = c
+    this.kidColor = z.g.kidColor
+    this.grades = z.g.grades.slice(0, ply)
+    const m = z.moves[ply - 1]
+    this.lastMove = m ? { from: m.from, to: m.to } : null
+    if (!m) {
+      this.point([], [])
+      return { at_move: 0, of: z.moves.length, note: 'the starting position' }
+    }
+    const by = m.color === z.g.kidColor ? 'you' : 'buddy'
+    const grade = z.g.grades[ply - 1] ?? null
+    const facts: Record<string, unknown> = {
+      at_move: ply,
+      of: z.moves.length,
+      by,
+      move: { san: m.san, piece: nameOf(m.piece), from: m.from, to: m.to, took: m.captured ? nameOf(m.captured) : undefined },
+      grade,
+    }
+    const arrows: Arrow[] = [{ from: m.from, to: m.to, kind: 'move' }]
+    if (by === 'you' && grade && ['inaccuracy', 'mistake', 'blunder'].includes(grade)) {
+      const res = await getEngine().analyse(m.before, { depth: 10 })
+      const best = res.lines[0]?.move
+      if (best && best !== m.lan) {
+        const bm = new Chess(m.before).move({ from: best.slice(0, 2), to: best.slice(2, 4), promotion: best[4] })
+        facts.better_move = { san: bm.san, piece: nameOf(bm.piece), from: bm.from, to: bm.to, took: bm.captured ? nameOf(bm.captured) : undefined }
+        facts.shown_on_board = 'their move in blue, the better one as a green arrow'
+        arrows.push({ from: bm.from, to: bm.to, kind: 'suggest' })
+      }
+    }
+    this.point(arrows, [])
+    this.log('Tutor', `Review move ${ply}: ${m.san}`, { by, grade })
+    return facts
+  }
+
+  private reviewView(): ReviewView | null {
+    const z = this.review
+    if (!z) return null
+    const m = z.moves[z.ply - 1]
+    return {
+      id: z.g.id,
+      started: z.g.started,
+      result: z.g.result,
+      opening: z.g.opening,
+      ply: z.ply,
+      total: z.moves.length,
+      san: m?.san ?? null,
+      by: m ? (m.color === z.g.kidColor ? 'you' : 'buddy') : null,
+      grade: m ? (z.g.grades[z.ply - 1] ?? null) : null,
+    }
+  }
+
   // ---------- Learn mode: one piece at a time, for people new to chess ----------
   private lesson: { l: Lesson; gobbled: number; total: number; moves: number; done: boolean } | null = null
 
@@ -1161,7 +1374,7 @@ export class GameController {
 
   /** Park an unfinished game (once) so "back to my game" can bring it back exactly after puzzles or lessons. */
   private parkGame() {
-    if (!this.puzzle && !this.lesson && this.chess.history().length && !this.overReason()) {
+    if (!this.puzzle && !this.lesson && !this.review && this.chess.history().length && !this.overReason()) {
       this.savedGame = { pgn: this.chess.pgn(), kidColor: this.kidColor, grades: [...this.grades], kidMoves: [...this.kidMoves], hintOpen: this.hintOpen, lastHintAtKidMove: this.lastHintAtKidMove }
     }
     // A finished game's "recorded" flag must not leak into the puzzle or the board after it.
@@ -1171,9 +1384,10 @@ export class GameController {
   /** Leave puzzles or lessons: bring back the parked game if there was one. */
   stopPuzzle() {
     return this.exclusive(async () => {
-      if (!this.puzzle && !this.lesson) return { status: 'no_puzzle' }
+      if (!this.puzzle && !this.lesson && !this.review) return { status: 'no_puzzle' }
       this.puzzle = null
       this.lesson = null
+      this.review = null
       this.pending = null
       this.marks = { squares: [], arrows: [] }
       this.mood = null
@@ -1404,7 +1618,11 @@ export class GameController {
     }
     this.puzzle = null
     this.lesson = null
+    this.review = null
     this.savedGame = null
+    this.paused = false
+    this.gameId = newGameId()
+    this.gameStarted = Date.now()
     if (color) this.kidColor = color === 'black' ? 'b' : 'w'
     this.chess = new Chess()
     this.lastMove = null
@@ -1507,6 +1725,7 @@ export class GameController {
   forgetMe(confirm: boolean): Record<string, unknown> {
     if (!confirm) return { status: 'need_confirmation', note: 'Ask the player to confirm first: this erases their name and history.' }
     resetProfile()
+    clearGames()
     this.profileEpoch++
     this.profile = loadProfile()
     this.scoutReport = null

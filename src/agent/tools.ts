@@ -64,6 +64,43 @@ export const toolDeclarations: FunctionDeclaration[] = [
     parametersJsonSchema: { type: 'object', properties: { topic: { type: 'string', description: 'A tactic or idea, or "opening" for the current opening.' } } },
   },
   {
+    name: 'pause_game',
+    behavior: Behavior.BLOCKING,
+    description: 'Pause the game ("let\'s take a break", "pause"). It is saved; it can be resumed later, even after closing the app.',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'resume_game',
+    behavior: Behavior.BLOCKING,
+    description: 'Resume a paused game ("resume", "let\'s continue").',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'open_game',
+    behavior: Behavior.BLOCKING,
+    description: 'Open a saved game: continue an unfinished one ("continue my last game") or replay one to learn from it ("review my last game", "show me the game I lost"). Every game is saved automatically.',
+    parametersJsonSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['continue', 'review'] },
+        which: { type: 'string', description: '"last", or a number from the saved list (1 = most recent)' },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'review_step',
+    behavior: Behavior.BLOCKING,
+    description: 'While reviewing a saved game: move through it. Each step returns that move, who played it, its grade and (for the player\'s weak moves) the engine\'s better move, drawn on the board.',
+    parametersJsonSchema: { type: 'object', properties: { go: { type: 'string', enum: ['next', 'back', 'start', 'end', 'next_mistake'] } }, required: ['go'] },
+  },
+  {
+    name: 'stop_review',
+    behavior: Behavior.BLOCKING,
+    description: 'Stop reviewing and go back to the current game.',
+    parametersJsonSchema: { type: 'object', properties: {} },
+  },
+  {
     name: 'start_lesson',
     behavior: Behavior.BLOCKING,
     description: 'Learn mode for beginners: teaches how ONE piece moves on a nearly empty board, with a tiny task (gobble the pawns). Use when the player is new, says they don\'t know how to play, or asks to learn a piece. Lessons go castle (rook), bishop, queen, king, horse (knight), pawn. Pass the piece they asked about, or "next".',
@@ -205,6 +242,11 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       result = await game.makeMove(args as MoveIntent)
       break
     case 'engine_reply':
+      // "Continue" while paused means resume.
+      if (game.getSnapshot().paused) {
+        result = await game.resumeGame()
+        break
+      }
       result = await game.opponentMove()
       break
     case 'analyse_position':
@@ -216,6 +258,23 @@ export async function runTool(game: GameController, call: Pick<FunctionCall, 'na
       break
     case 'review_move':
       result = await game.reviewMove()
+      break
+    case 'pause_game':
+      result = await game.pauseGame()
+      break
+    case 'resume_game':
+      result = await game.resumeGame()
+      break
+    case 'open_game': {
+      const w = typeof args.which === 'string' && /^\d+$/.test(args.which) ? Number(args.which) : (args.which as string | undefined)
+      result = await game.openGame(w, args.action === 'continue' ? 'continue' : 'review')
+      break
+    }
+    case 'review_step':
+      result = await game.reviewStep(String(args.go ?? 'next'))
+      break
+    case 'stop_review':
+      result = await game.stopPuzzle()
       break
     case 'start_lesson':
       result = await game.startLesson(typeof args.lesson === 'string' ? args.lesson : undefined)
