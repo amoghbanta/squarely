@@ -56,7 +56,14 @@ export class LiveVoice {
     this.handlers = handlers
   }
 
+  private lastConnect: [string, string, FunctionDeclaration[]] | null = null
+  private gen = 0
+
   async connect(apiKey: string, systemInstruction: string, functionDeclarations: FunctionDeclaration[]) {
+    this.lastConnect = [apiKey, systemInstruction, functionDeclarations]
+    // Callbacks from an older socket (e.g. its late close after a resume) must not touch the new one.
+    const gen = ++this.gen
+    const current = () => gen === this.gen
     this.handlers.onState('connecting')
     // Must run inside the user gesture that triggered connect().
     this.outCtx ??= new AudioContext({ sampleRate: 24000 })
@@ -78,12 +85,32 @@ export class LiveVoice {
         sessionResumption: { handle: this.resumeHandle },
       },
       callbacks: {
-        onopen: () => this.handlers.onState('live'),
-        onerror: (e) => this.dropSession('error', String((e as ErrorEvent).message ?? e)),
-        onclose: (e) => this.dropSession('closed', e.reason),
-        onmessage: (m) => void this.onMessage(m),
+        onopen: () => current() && this.handlers.onState('live'),
+        onerror: (e) => current() && this.dropSession('error', String((e as ErrorEvent).message ?? e)),
+        onclose: (e) => current() && this.dropSession('closed', e.reason),
+        onmessage: (m) => current() && void this.onMessage(m),
       },
     })
+  }
+
+  private resuming = false
+  private async resume() {
+    if (this.resuming || !this.lastConnect) return
+    this.resuming = true
+    const hadMic = this.micOn
+    const old = this.session
+    this.session = null
+    try {
+      old?.close()
+    } catch {
+      /* already closing */
+    }
+    try {
+      await this.connect(...this.lastConnect)
+      if (hadMic && !this.micOn) await this.startMic()
+    } finally {
+      this.resuming = false
+    }
   }
 
   /** The socket is gone: release the mic and let the next tap reconnect (resuming the session). */
@@ -105,6 +132,8 @@ export class LiveVoice {
     if (m.sessionResumptionUpdate?.resumable && m.sessionResumptionUpdate.newHandle) {
       this.resumeHandle = m.sessionResumptionUpdate.newHandle
     }
+    // The server rotates connections (~10 min). Resume the same conversation on a fresh socket.
+    if (m.goAway && this.lastConnect && this.resumeHandle) void this.resume()
     // Each call is answered as soon as it finishes: slow background tools (the Scout) must not
     // hold up fast board tools. Async tools come back WHEN_IDLE so the buddy isn't cut off.
     for (const fc of m.toolCall?.functionCalls ?? []) {
@@ -216,6 +245,7 @@ export class LiveVoice {
     this.flushPlayback()
     const s = this.session
     this.session = null
+    this.gen++ // ignore the closing socket's callbacks
     s?.close()
     this.handlers.onState('closed')
   }
