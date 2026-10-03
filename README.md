@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/images/banner.png" alt="Squarely: chess you play by talking, with a coach that never makes things up" width="100%"></p>
+
 # Squarely
 
 **Chess you play by talking, with a coach that never makes things up.**
@@ -9,6 +11,25 @@ Squarely is a voice-first chess partner for anyone who has nobody to play and pr
 It's kid-friendly by default, with a kids-mode toggle, and accessible out of the box: you never need to see the board, so blind and low-vision players can play eyes-closed.
 
 Built in one day at the {Tech: Europe} × Google DeepMind Agentic AI Hack, Stockholm, 3 October 2026.
+
+<table>
+  <tr>
+    <td width="62%"><img src="docs/images/tutor-desktop.png" alt="After a blunder, Squarely pauses the game, looks worried, highlights the bishop in danger, and the agent log explains each step in plain English"></td>
+    <td><img src="docs/images/phone-ask.png" alt="On a phone: 'move my horse to the middle' fits two moves, so Squarely points at both horses and asks which one"></td>
+  </tr>
+  <tr>
+    <td><sub><b>The tutor steps in.</b> Bishop to a6 drops the bishop (Stockfish: winning chances 53% → 6%). Squarely pauses, highlights the piece and asks a question instead of giving the answer. The agent log on the right shows every step in plain English.</sub></td>
+    <td><sub><b>It asks instead of guessing.</b> "Move my horse to the middle" fits two moves, so it points at both and reads the options out loud.</sub></td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/scout-running.png" alt="The Scout agent studied 15 chess.com games in the background while the game went on"></td>
+    <td><img src="docs/images/phone-key.png" alt="Getting started: a free Gemini key from Google AI Studio"></td>
+  </tr>
+  <tr>
+    <td><sub><b>The Scout works in the background.</b> Say your chess.com name and a second agent fetches your games, checks every move with Stockfish and finds your recurring mistakes, while you keep playing.</sub></td>
+    <td><sub><b>Setup takes a minute.</b> Bring a free Gemini key from Google AI Studio. It goes straight from your browser to Google.</sub></td>
+  </tr>
+</table>
 
 ---
 
