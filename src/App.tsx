@@ -170,6 +170,20 @@ export function App() {
     if (!connected) setMicOn(false)
   }, [connected])
 
+  // Long-term memory: condense compresses the conversation every dozen lines, when the mic stops,
+  // and when the page is hidden, so the next session starts with a compact memory.
+  useEffect(() => {
+    if (s.transcript.length && s.transcript.length % 12 === 0) void game.compressSession()
+  }, [s.transcript.length])
+  useEffect(() => {
+    if (!micOn) void game.compressSession()
+  }, [micOn])
+  useEffect(() => {
+    const onHide = () => document.visibilityState === 'hidden' && void game.compressSession()
+    document.addEventListener('visibilitychange', onHide)
+    return () => document.removeEventListener('visibilitychange', onHide)
+  }, [])
+
   // "Show me what the Scout found": switch the panel (and open the sheet on phones).
   useEffect(() => {
     if (s.panel !== 'scout') return
@@ -503,6 +517,24 @@ export function App() {
                       onChange={(v: PieceStyle) => game.changeSettings({ piece_style: v })}
                       options={(Object.keys(PIECE_STYLES) as PieceStyle[]).map((k) => ({ value: k, label: PIECE_STYLES[k].split(' (')[0] }))}
                     />
+                  </div>
+                </Group>
+                <Group title="Memory" footer="condense.chat compresses past conversations and the Scout's game log before Gemini reads them.">
+                  <div className="row">
+                    <span className="row-text">
+                      <span>Tokens saved by condense</span>
+                      <small>
+                        {s.profile.condense.calls
+                          ? `${(s.profile.condense.before - s.profile.condense.after).toLocaleString()} of ${s.profile.condense.before.toLocaleString()} (−${Math.round((1 - s.profile.condense.after / s.profile.condense.before) * 100)}%) over ${s.profile.condense.calls} compressions`
+                          : 'Nothing compressed yet'}
+                      </small>
+                    </span>
+                  </div>
+                  <div className="row">
+                    <span className="row-text">
+                      <span>Remembers from last time</span>
+                      <small>{s.profile.sessionMemory ? `${s.profile.sessionMemory.slice(0, 90)}…` : 'Nothing yet'}</small>
+                    </span>
                   </div>
                 </Group>
                 <Group title="Privacy" footer="Your key goes straight from this browser to Google. Your games and progress stay on this device.">

@@ -10,6 +10,7 @@ export function systemInstruction(profile: Profile, level: number, kidsMode: boo
     profile.gamesPlayed ? `They have played ${profile.gamesPlayed} games with you and won ${profile.wins}.` : 'This is their first game with you.',
     mistakes.length ? `Recurring mistakes to watch gently: ${mistakes.join(', ').replace(/_/g, ' ')}.` : '',
     profile.notes.length ? `Things they told you: ${profile.notes.join('; ')}.` : '',
+    profile.sessionMemory ? `LAST TIME (your own notes from earlier conversations, compressed): ${profile.sessionMemory.slice(0, 2500)}` : '',
     profile.scout ? `Your Scout studied their chess.com games: ${profile.scout.headline} Practice focus: ${profile.scout.focus.replace(/_/g, ' ')}.` : '',
   ]
     .filter(Boolean)

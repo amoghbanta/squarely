@@ -21,6 +21,7 @@ import { classifyPunishment, type Punishment } from '../chess/motifs'
 import { loadProfile, resetProfile, saveProfile, topMistakes, type Profile } from '../memory/store'
 import { BOARD_THEMES, PIECE_STYLES, isBoardTheme, isPieceStyle, type BoardTheme, type PieceStyle } from '../ui/themes'
 import { runScout, type ScoutReport, type ScoutSource } from '../scout/scout'
+import { compress, flatten } from '../memory/condense'
 
 export type Role = 'Voice' | 'Referee' | 'Opponent' | 'Tutor' | 'Memory' | 'Board' | 'Scout'
 
@@ -545,6 +546,40 @@ export class GameController {
     this.panel = 'summary'
   }
 
+  // ---------- Session memory (compressed by condense) ----------
+  private compressing = false
+  private compressedUpTo = 0
+
+  /** Compress the conversation so far into long-term memory for the next session. */
+  async compressSession(): Promise<void> {
+    const lines = this.transcript.slice(this.compressedUpTo)
+    if (this.compressing || lines.length < 4) return
+    this.compressing = true
+    try {
+      const messages = [
+        ...(this.profile.sessionMemory ? [{ role: 'system' as const, content: `Earlier sessions: ${this.profile.sessionMemory}` }] : []),
+        ...lines.map((l) => ({ role: l.who === 'kid' ? ('user' as const) : ('assistant' as const), content: l.text })),
+      ]
+      const t0 = performance.now()
+      const c = await compress(messages)
+      if (!c) return
+      this.compressedUpTo += lines.length
+      this.recordSavings('session memory', c.before, c.after, performance.now() - t0)
+      this.profile = { ...this.profile, sessionMemory: flatten(c.messages).slice(0, 6000) }
+      saveProfile(this.profile)
+    } finally {
+      this.compressing = false
+    }
+  }
+
+  recordSavings(what: string, before: number, after: number, ms?: number) {
+    const prev = this.profile.condense
+    this.profile = { ...this.profile, condense: { calls: prev.calls + 1, before: prev.before + before, after: prev.after + after } }
+    saveProfile(this.profile)
+    const pct = before ? Math.round((1 - after / before) * 100) : 0
+    this.log('Memory', `condense: ${what} ${before.toLocaleString()} → ${after.toLocaleString()} tokens (−${pct}%)`, undefined, ms)
+  }
+
   // ---------- Scout (background agent) ----------
   async scout(source: ScoutSource): Promise<Record<string, unknown>> {
     if (this.scouting) return { status: 'already_scouting' }
@@ -552,7 +587,7 @@ export class GameController {
     this.emit()
     const t0 = performance.now()
     try {
-      const report = await runScout(source, this.apiKey, (title, detail) => {
+      const report = await runScout(source, this.apiKey, (b, a) => this.recordSavings('Scout mistake log', b, a), (title, detail) => {
         this.scoutProgress = title
         this.log('Scout', title, detail)
       })

@@ -11,6 +11,8 @@ export type Profile = {
   notes: string[] // short facts the kid shared ("likes horses")
   lastSummary: string | null
   scout: { username: string; at: number; headline: string; focus: string; tips: string[] } | null
+  sessionMemory: string | null // last conversation, compressed by condense
+  condense: { calls: number; before: number; after: number } // lifetime token savings
 }
 
 const KEY = 'squarely.profile.v1'
@@ -26,6 +28,8 @@ const empty = (): Profile => ({
   notes: [],
   lastSummary: null,
   scout: null,
+  sessionMemory: null,
+  condense: { calls: 0, before: 0, after: 0 },
 })
 
 export function loadProfile(): Profile {

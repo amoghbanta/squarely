@@ -6,6 +6,7 @@ import { GoogleGenAI, ThinkingLevel } from '@google/genai'
 import { StockfishEngine, type EngineLine } from '../engine/stockfish'
 import { classifyPunishment } from '../chess/motifs'
 import { BLUNDER_WIN_PROB_LOSS, winProb } from '../chess/facts'
+import { compress, flatten } from '../memory/condense'
 
 export const BRAIN_MODEL = 'gemini-3.8-flash'
 
@@ -65,7 +66,12 @@ function splitPgn(pgn: string): RawGame[] {
     }))
 }
 
-export async function runScout(source: ScoutSource, apiKey: string | null, step: Step): Promise<ScoutReport> {
+export async function runScout(
+  source: ScoutSource,
+  apiKey: string | null,
+  onSaved: (before: number, after: number) => void,
+  step: Step,
+): Promise<ScoutReport> {
   step('Plan', 'fetch games → review every move with the engine → find patterns → write plan → save to memory')
 
   // 1. Fetch
@@ -79,6 +85,7 @@ export async function runScout(source: ScoutSource, apiKey: string | null, step:
   const motifs: Record<string, number> = {}
   const phases = { opening: 0, middlegame: 0, endgame: 0 }
   const examples: ScoutExample[] = []
+  const allMistakes: ScoutExample[] = []
   const record = { wins: 0, losses: 0, draws: 0 }
   let movesReviewed = 0
   let mistakes = 0
@@ -126,6 +133,7 @@ export async function runScout(source: ScoutSource, apiKey: string | null, step:
       else phases.endgame++
       mistakes++
       gameMistakes++
+      allMistakes.push({ game: gi + 1, moveNumber, played: m.san, motif, facts: p.hintFacts })
       if (examples.length < 6) examples.push({ game: gi + 1, moveNumber, played: m.san, motif, facts: p.hintFacts })
     })
     step(`Reviewed game ${gi + 1}/${raw.length}`, { kidPlays: kid === 'w' ? 'white' : 'black', result, bigMistakes: gameMistakes })
@@ -139,7 +147,15 @@ export async function runScout(source: ScoutSource, apiKey: string | null, step:
   if (apiKey) {
     try {
       const ai = new GoogleGenAI({ apiKey })
-      const facts = { record, movesReviewed, mistakes, motifs, phases, examples }
+      // The full annotated mistake log is long; condense compresses it before Gemini reads it.
+      // Without condense, only the first few examples are sent.
+      const log = allMistakes.map((x) => ({ role: 'user' as const, content: `Game ${x.game}, move ${x.moveNumber}: played ${x.played}. ${x.motif}. ${JSON.stringify(x.facts)}` }))
+      const c = await compress(log)
+      if (c) {
+        onSaved(c.before, c.after)
+        step('condense compressed the mistake log', { tokens_before: c.before, tokens_after: c.after })
+      }
+      const facts = { record, movesReviewed, mistakes, motifs, phases, ...(c ? { mistake_log: flatten(c.messages) } : { examples }) }
       const ask = () => ai.models.generateContent({
         model: BRAIN_MODEL,
         contents: `FACTS (computed by a chess engine, the only truth you may use):\n${JSON.stringify(facts)}`,
